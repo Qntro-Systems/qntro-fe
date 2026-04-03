@@ -14,7 +14,10 @@ import type {
   EnergyData,
   GasSourceTypeEnergyPreference,
 } from "../../../../data/energy";
-import { getEnergyDataCollection } from "../../../../data/energy";
+import {
+  getEnergyDataCollection,
+  validateEnergyCollectionKey,
+} from "../../../../data/energy";
 import type { Statistics, StatisticsMetaData } from "../../../../data/recorder";
 import { getStatisticLabel } from "../../../../data/recorder";
 import type { FrontendLocaleData } from "../../../../data/translation";
@@ -28,16 +31,33 @@ import {
   getCommonOptions,
   getCompareTransform,
 } from "./common/energy-chart-options";
-import type { ECOption } from "../../../../resources/echarts";
+import type { ECOption } from "../../../../resources/echarts/echarts";
+import "./common/hui-energy-graph-chip";
+import "../../../../components/ha-tooltip";
 
 @customElement("hui-energy-gas-graph-card")
 export class HuiEnergyGasGraphCard
   extends SubscribeMixin(LitElement)
   implements LovelaceCard
 {
+  public static async getConfigElement() {
+    await import("../../editor/config-elements/hui-energy-graph-card-editor");
+    return document.createElement("hui-energy-graph-card-editor");
+  }
+
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @state() private _config?: EnergyGasGraphCardConfig;
+
+  public static getStubConfig(
+    _hass: HomeAssistant,
+    _entities: string[],
+    _entitiesFill: string[]
+  ): EnergyGasGraphCardConfig {
+    return {
+      type: "energy-gas-graph",
+    };
+  }
 
   @state() private _chartData: BarSeriesOption[] = [];
 
@@ -50,6 +70,8 @@ export class HuiEnergyGasGraphCard
   @state() private _compareEnd?: Date;
 
   @state() private _unit?: string;
+
+  @state() private _total?: number;
 
   protected hassSubscribeRequiredHostProps = ["_config"];
 
@@ -66,6 +88,9 @@ export class HuiEnergyGasGraphCard
   }
 
   public setConfig(config: EnergyGasGraphCardConfig): void {
+    if (config.collection_key) {
+      validateEnergyCollectionKey(config.collection_key);
+    }
     this._config = config;
   }
 
@@ -85,8 +110,17 @@ export class HuiEnergyGasGraphCard
     return html`
       <ha-card>
         ${this._config.title
-          ? html`<h1 class="card-header">${this._config.title}</h1>`
-          : ""}
+          ? html` <div class="card-header">
+              <span>${this._config.title}</span>
+              ${this._total
+                ? html`<hui-energy-graph-chip
+                    .tooltip=${this._formatTotal(this._total)}
+                  >
+                    ${formatNumber(this._total, this.hass.locale)} ${this._unit}
+                  </hui-energy-graph-chip>`
+                : nothing}
+            </div>`
+          : nothing}
         <div
           class="content ${classMap({
             "has-header": !!this._config.title,
@@ -199,6 +233,24 @@ export class HuiEnergyGasGraphCard
 
     fillDataGapsAndRoundCaps(datasets);
     this._chartData = datasets;
+    this._total = this._processTotal(energyData.stats, gasSources);
+  }
+
+  private _processTotal(
+    statistics: Statistics,
+    gasSources: GasSourceTypeEnergyPreference[]
+  ) {
+    return gasSources.reduce(
+      (sum, source) =>
+        sum +
+        (source.stat_energy_from in statistics
+          ? statistics[source.stat_energy_from].reduce(
+              (acc, curr) => acc + (curr.change || 0),
+              0
+            )
+          : 0),
+      0
+    );
   }
 
   private _processDataSet(
@@ -288,6 +340,9 @@ export class HuiEnergyGasGraphCard
       height: 100%;
     }
     .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       padding-bottom: 0;
     }
     .content {

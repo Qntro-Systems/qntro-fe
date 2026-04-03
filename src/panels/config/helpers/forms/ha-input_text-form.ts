@@ -8,7 +8,7 @@ import "../../../../components/ha-formfield";
 import "../../../../components/ha-icon-picker";
 import "../../../../components/ha-radio";
 import type { HaRadio } from "../../../../components/ha-radio";
-import "../../../../components/ha-textfield";
+import "../../../../components/input/ha-input";
 import type { InputText } from "../../../../data/input_text";
 import { haStyle } from "../../../../resources/styles";
 import type { HomeAssistant } from "../../../../types";
@@ -18,6 +18,8 @@ class HaInputTextForm extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @property({ type: Boolean }) public new = false;
+
+  @property({ type: Boolean }) public disabled = false;
 
   private _item?: InputText;
 
@@ -66,20 +68,21 @@ class HaInputTextForm extends LitElement {
 
     return html`
       <div class="form">
-        <ha-textfield
+        <ha-input
           .value=${this._name}
           .configValue=${"name"}
           @input=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.name"
           )}
-          autoValidate
+          auto-validate
           required
           .validationMessage=${this.hass!.localize(
             "ui.dialogs.helper_settings.required_error_msg"
           )}
           dialogInitialFocus
-        ></ha-textfield>
+          .disabled=${this.disabled}
+        ></ha-input>
         <ha-icon-picker
           .hass=${this.hass}
           .value=${this._icon}
@@ -88,6 +91,7 @@ class HaInputTextForm extends LitElement {
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.icon"
           )}
+          .disabled=${this.disabled}
         ></ha-icon-picker>
         <ha-expansion-panel
           header=${this.hass.localize(
@@ -95,8 +99,8 @@ class HaInputTextForm extends LitElement {
           )}
           outlined
         >
-          <ha-textfield
-            .value=${this._min}
+          <ha-input
+            .value=${this._min !== undefined ? String(this._min) : ""}
             .configValue=${"min"}
             type="number"
             min="0"
@@ -105,9 +109,10 @@ class HaInputTextForm extends LitElement {
             .label=${this.hass!.localize(
               "ui.dialogs.helper_settings.input_text.min"
             )}
-          ></ha-textfield>
-          <ha-textfield
-            .value=${this._max}
+            .disabled=${this.disabled}
+          ></ha-input>
+          <ha-input
+            .value=${this._max !== undefined ? String(this._max) : ""}
             .configValue=${"max"}
             min="0"
             max="255"
@@ -116,7 +121,7 @@ class HaInputTextForm extends LitElement {
             .label=${this.hass!.localize(
               "ui.dialogs.helper_settings.input_text.max"
             )}
-          ></ha-textfield>
+          ></ha-input>
           <div class="layout horizontal center justified">
             ${this.hass.localize("ui.dialogs.helper_settings.input_text.mode")}
             <ha-formfield
@@ -129,6 +134,7 @@ class HaInputTextForm extends LitElement {
                 value="text"
                 .checked=${this._mode === "text"}
                 @change=${this._modeChanged}
+                .disabled=${this.disabled}
               ></ha-radio>
             </ha-formfield>
             <ha-formfield
@@ -141,20 +147,22 @@ class HaInputTextForm extends LitElement {
                 value="password"
                 .checked=${this._mode === "password"}
                 @change=${this._modeChanged}
+                .disabled=${this.disabled}
               ></ha-radio>
             </ha-formfield>
           </div>
-          <ha-textfield
+          <ha-input
             .value=${this._pattern || ""}
             .configValue=${"pattern"}
             @input=${this._valueChanged}
             .label=${this.hass!.localize(
               "ui.dialogs.helper_settings.input_text.pattern_label"
             )}
-            .helper=${this.hass!.localize(
+            .hint=${this.hass!.localize(
               "ui.dialogs.helper_settings.input_text.pattern_helper"
             )}
-          ></ha-textfield>
+            .disabled=${this.disabled}
+          ></ha-input>
         </ha-expansion-panel>
       </div>
     `;
@@ -197,13 +205,16 @@ class HaInputTextForm extends LitElement {
         .row {
           padding: 16px 0;
         }
-        ha-textfield,
-        ha-icon-picker {
-          display: block;
-          margin: 8px 0;
+        ha-input {
+          --ha-input-padding-bottom: 0;
         }
-        ha-expansion-panel {
-          margin-top: 16px;
+        ha-icon-picker,
+        ha-input:not([required]) {
+          display: block;
+          margin-bottom: var(--ha-space-5);
+        }
+        ha-expansion-panel ha-input:first-child {
+          margin-top: var(--ha-space-4);
         }
       `,
     ];

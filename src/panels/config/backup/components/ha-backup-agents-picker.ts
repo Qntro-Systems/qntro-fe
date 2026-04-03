@@ -63,12 +63,14 @@ class HaBackupAgentsPicker extends LitElement {
               ? html` <ha-svg-icon .path=${mdiNas} slot="start"></ha-svg-icon> `
               : html`
                   <img
-                    .src=${brandsUrl({
-                      domain,
-                      type: "icon",
-                      useFallback: true,
-                      darkOptimized: this.hass.themes?.darkMode,
-                    })}
+                    .src=${brandsUrl(
+                      {
+                        domain,
+                        type: "icon",
+                        darkOptimized: this.hass.themes?.darkMode,
+                      },
+                      this.hass.auth.data.hassUrl
+                    )}
                     crossorigin="anonymous"
                     referrerpolicy="no-referrer"
                     alt=""
@@ -119,7 +121,7 @@ class HaBackupAgentsPicker extends LitElement {
       display: flex;
       flex-direction: row;
       align-items: center;
-      gap: 16px;
+      gap: var(--ha-space-4);
       font-size: var(--ha-font-size-l);
       font-weight: var(--ha-font-weight-normal);
       line-height: var(--ha-line-height-normal);

@@ -2,9 +2,12 @@ import type { AlarmMode } from "../../../data/alarm_control_panel";
 import type { HvacMode } from "../../../data/climate";
 import type { OperationMode } from "../../../data/water_heater";
 
+export type ButtonCardData = Record<string, any>;
+
 export interface ButtonCardFeatureConfig {
   type: "button";
   action_name?: string;
+  data?: ButtonCardData;
 }
 
 export interface CoverOpenCloseCardFeatureConfig {
@@ -23,12 +26,24 @@ export interface CoverTiltPositionCardFeatureConfig {
   type: "cover-tilt-position";
 }
 
+export interface CoverPositionFavoriteCardFeatureConfig {
+  type: "cover-position-favorite";
+}
+
+export interface CoverTiltFavoriteCardFeatureConfig {
+  type: "cover-tilt-favorite";
+}
+
 export interface LightBrightnessCardFeatureConfig {
   type: "light-brightness";
 }
 
 export interface LightColorTempCardFeatureConfig {
   type: "light-color-temp";
+}
+
+export interface LightColorFavoritesCardFeatureConfig {
+  type: "light-color-favorites";
 }
 
 export interface LockCommandsCardFeatureConfig {
@@ -43,8 +58,21 @@ export interface MediaPlayerPlaybackCardFeatureConfig {
   type: "media-player-playback";
 }
 
+export interface MediaPlayerSourceCardFeatureConfig {
+  type: "media-player-source";
+}
+
 export interface MediaPlayerVolumeSliderCardFeatureConfig {
   type: "media-player-volume-slider";
+}
+
+export interface MediaPlayerVolumeButtonsCardFeatureConfig {
+  type: "media-player-volume-buttons";
+  step?: number;
+}
+
+export interface MediaPlayerSoundModeCardFeatureConfig {
+  type: "media-player-sound-mode";
 }
 
 export interface FanDirectionCardFeatureConfig {
@@ -137,6 +165,7 @@ export interface ToggleCardFeatureConfig {
 
 export interface WaterHeaterOperationModesCardFeatureConfig {
   type: "water-heater-operation-modes";
+  style?: "dropdown" | "icons";
   operation_modes?: OperationMode[];
 }
 
@@ -173,6 +202,10 @@ export interface ValvePositionCardFeatureConfig {
   type: "valve-position";
 }
 
+export interface ValvePositionFavoriteCardFeatureConfig {
+  type: "valve-position-favorite";
+}
+
 export const LAWN_MOWER_COMMANDS = ["start_pause", "dock"] as const;
 
 export type LawnMowerCommand = (typeof LAWN_MOWER_COMMANDS)[number];
@@ -190,9 +223,10 @@ export interface UpdateActionsCardFeatureConfig {
 export interface TrendGraphCardFeatureConfig {
   type: "trend-graph";
   hours_to_show?: number;
+  detail?: boolean;
 }
 
-export const AREA_CONTROLS = [
+export const AREA_CONTROL_DOMAINS = [
   "light",
   "fan",
   "cover-shutter",
@@ -208,7 +242,9 @@ export const AREA_CONTROLS = [
   "switch",
 ] as const;
 
-export type AreaControl = (typeof AREA_CONTROLS)[number];
+export type AreaControlDomain = (typeof AREA_CONTROL_DOMAINS)[number];
+
+export type AreaControl = AreaControlDomain | { entity_id: string };
 
 export interface AreaControlsCardFeatureConfig {
   type: "area-controls";
@@ -217,6 +253,8 @@ export interface AreaControlsCardFeatureConfig {
 
 export interface BarGaugeCardFeatureConfig {
   type: "bar-gauge";
+  min?: number;
+  max?: number;
 }
 
 export type LovelaceCardFeaturePosition = "bottom" | "inline";
@@ -232,6 +270,8 @@ export type LovelaceCardFeatureConfig =
   | CounterActionsCardFeatureConfig
   | CoverOpenCloseCardFeatureConfig
   | CoverPositionCardFeatureConfig
+  | CoverPositionFavoriteCardFeatureConfig
+  | CoverTiltFavoriteCardFeatureConfig
   | CoverTiltPositionCardFeatureConfig
   | CoverTiltCardFeatureConfig
   | DateSetCardFeatureConfig
@@ -245,9 +285,13 @@ export type LovelaceCardFeatureConfig =
   | LawnMowerCommandsCardFeatureConfig
   | LightBrightnessCardFeatureConfig
   | LightColorTempCardFeatureConfig
+  | LightColorFavoritesCardFeatureConfig
   | LockCommandsCardFeatureConfig
   | LockOpenDoorCardFeatureConfig
   | MediaPlayerPlaybackCardFeatureConfig
+  | MediaPlayerSoundModeCardFeatureConfig
+  | MediaPlayerSourceCardFeatureConfig
+  | MediaPlayerVolumeButtonsCardFeatureConfig
   | MediaPlayerVolumeSliderCardFeatureConfig
   | NumericInputCardFeatureConfig
   | SelectOptionsCardFeatureConfig
@@ -258,6 +302,7 @@ export type LovelaceCardFeatureConfig =
   | UpdateActionsCardFeatureConfig
   | VacuumCommandsCardFeatureConfig
   | ValveOpenCloseCardFeatureConfig
+  | ValvePositionFavoriteCardFeatureConfig
   | ValvePositionCardFeatureConfig
   | WaterHeaterOperationModesCardFeatureConfig
   | AreaControlsCardFeatureConfig

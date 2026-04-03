@@ -93,17 +93,21 @@ export class HuiPictureCard extends LitElement implements LovelaceCard {
       changedProps.has("_config") &&
       changedProps.get("_config")?.image !== this._config?.image;
 
+    const image =
+      (typeof this._config?.image === "object" &&
+        this._config.image.media_content_id) ||
+      (this._config.image as string | undefined);
     if (
       (firstHass || imageChanged) &&
-      typeof this._config?.image === "string" &&
-      isMediaSourceContentId(this._config.image)
+      typeof image === "string" &&
+      isMediaSourceContentId(image)
     ) {
       this._resolvedImage = undefined;
-      resolveMediaSource(this.hass, this._config?.image).then((result) => {
+      resolveMediaSource(this.hass, image).then((result) => {
         this._resolvedImage = result.url;
       });
     } else if (imageChanged) {
-      this._resolvedImage = this._config?.image;
+      this._resolvedImage = image;
     }
   }
 
@@ -178,12 +182,12 @@ export class HuiPictureCard extends LitElement implements LovelaceCard {
         class=${classMap({
           clickable: Boolean(
             (this._config.image_entity && !this._config.tap_action) ||
-              (this._config.tap_action &&
-                this._config.tap_action.action !== "none") ||
-              (this._config.hold_action &&
-                this._config.hold_action.action !== "none") ||
-              (this._config.double_tap_action &&
-                this._config.double_tap_action.action !== "none")
+            (this._config.tap_action &&
+              this._config.tap_action.action !== "none") ||
+            (this._config.hold_action &&
+              this._config.hold_action.action !== "none") ||
+            (this._config.double_tap_action &&
+              this._config.double_tap_action.action !== "none")
           ),
         })}
       >

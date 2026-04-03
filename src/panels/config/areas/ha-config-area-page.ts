@@ -7,35 +7,37 @@ import { customElement, property, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
 import memoizeOne from "memoize-one";
 import { isComponentLoaded } from "../../../common/config/is_component_loaded";
-import { goBack } from "../../../common/navigate";
 import { computeDeviceNameDisplay } from "../../../common/entity/compute_device_name";
 import { computeDomain } from "../../../common/entity/compute_domain";
 import { computeStateName } from "../../../common/entity/compute_state_name";
+import { goBack } from "../../../common/navigate";
 import { caseInsensitiveStringCompare } from "../../../common/string/compare";
+import { slugify } from "../../../common/string/slugify";
 import { groupBy } from "../../../common/util/group-by";
 import { afterNextRender } from "../../../common/util/render-status";
-import "../../../components/ha-button-menu";
-import "../../../components/ha-card";
 import "../../../components/ha-button";
+import "../../../components/ha-card";
+import "../../../components/ha-dropdown";
+import type { HaDropdownSelectEvent } from "../../../components/ha-dropdown";
+import "../../../components/ha-dropdown-item";
 import "../../../components/ha-icon-button";
 import "../../../components/ha-icon-next";
-import "../../../components/ha-list-item";
 import "../../../components/ha-list";
 import "../../../components/ha-tooltip";
-import type { AreaRegistryEntry } from "../../../data/area_registry";
+import type { AreaRegistryEntry } from "../../../data/area/area_registry";
 import {
   deleteAreaRegistryEntry,
   updateAreaRegistryEntry,
-} from "../../../data/area_registry";
+} from "../../../data/area/area_registry";
 import type { AutomationEntity } from "../../../data/automation";
 import { fullEntitiesContext } from "../../../data/context";
-import type { DeviceRegistryEntry } from "../../../data/device_registry";
-import { sortDeviceRegistryByName } from "../../../data/device_registry";
-import type { EntityRegistryEntry } from "../../../data/entity_registry";
+import type { DeviceRegistryEntry } from "../../../data/device/device_registry";
+import { sortDeviceRegistryByName } from "../../../data/device/device_registry";
+import type { EntityRegistryEntry } from "../../../data/entity/entity_registry";
 import {
   computeEntityRegistryName,
   sortEntityRegistryByName,
-} from "../../../data/entity_registry";
+} from "../../../data/entity/entity_registry";
 import type { SceneEntity } from "../../../data/scene";
 import type { ScriptEntity } from "../../../data/script";
 import type { RelatedResult } from "../../../data/search";
@@ -51,7 +53,6 @@ import {
   loadAreaRegistryDetailDialog,
   showAreaRegistryDetailDialog,
 } from "./show-dialog-area-registry-detail";
-import { slugify } from "../../../common/string/slugify";
 
 declare interface NameAndEntity<EntityType extends HassEntity> {
   name: string;
@@ -72,7 +73,7 @@ class HaConfigAreaPage extends LitElement {
 
   @state()
   @consume({ context: fullEntitiesContext, subscribe: true })
-  _entityReg!: EntityRegistryEntry[];
+  _entityReg: EntityRegistryEntry[] = [];
 
   @state() private _related?: RelatedResult;
 
@@ -165,7 +166,11 @@ class HaConfigAreaPage extends LitElement {
     // Pre-compute the entity and device names, so we can sort by them
     if (devices) {
       devices.forEach((entry) => {
-        entry.name = computeDeviceNameDisplay(entry, this.hass);
+        entry.name = computeDeviceNameDisplay(
+          entry,
+          this.hass.localize,
+          this.hass.states
+        );
       });
       sortDeviceRegistryByName(devices, this.hass.locale.language);
     }
@@ -189,7 +194,7 @@ class HaConfigAreaPage extends LitElement {
     let relatedScenes: NameAndEntity<SceneEntity>[] = [];
     let relatedScripts: NameAndEntity<ScriptEntity>[] = [];
 
-    if (isComponentLoaded(this.hass, "automation")) {
+    if (isComponentLoaded(this.hass.config, "automation")) {
       ({
         groupedEntities: groupedAutomations,
         relatedEntities: relatedAutomations,
@@ -199,7 +204,7 @@ class HaConfigAreaPage extends LitElement {
       ));
     }
 
-    if (isComponentLoaded(this.hass, "scene")) {
+    if (isComponentLoaded(this.hass.config, "scene")) {
       ({ groupedEntities: groupedScenes, relatedEntities: relatedScenes } =
         this._prepareEntities<SceneEntity>(
           groupedEntities.scene,
@@ -207,7 +212,7 @@ class HaConfigAreaPage extends LitElement {
         ));
     }
 
-    if (isComponentLoaded(this.hass, "script")) {
+    if (isComponentLoaded(this.hass.config, "script")) {
       ({ groupedEntities: groupedScripts, relatedEntities: relatedScripts } =
         this._prepareEntities<ScriptEntity>(
           groupedEntities.script,
@@ -226,32 +231,23 @@ class HaConfigAreaPage extends LitElement {
             ></ha-icon>`
           : nothing}${area.name}`}
       >
-        <ha-button-menu slot="toolbar-icon">
+        <ha-dropdown slot="toolbar-icon" @wa-select=${this._handleMenuAction}>
           <ha-icon-button
             slot="trigger"
             .label=${this.hass.localize("ui.common.menu")}
             .path=${mdiDotsVertical}
           ></ha-icon-button>
 
-          <ha-list-item
-            graphic="icon"
-            .entry=${area}
-            @click=${this._showSettings}
-          >
+          <ha-dropdown-item value="edit" .data=${area}>
+            <ha-svg-icon slot="icon" .path=${mdiPencil}> </ha-svg-icon>
             ${this.hass.localize("ui.panel.config.areas.edit_settings")}
-            <ha-svg-icon slot="graphic" .path=${mdiPencil}> </ha-svg-icon>
-          </ha-list-item>
+          </ha-dropdown-item>
 
-          <ha-list-item
-            class="warning"
-            graphic="icon"
-            @click=${this._deleteConfirm}
-          >
+          <ha-dropdown-item value="delete" variant="danger">
+            <ha-svg-icon slot="icon" .path=${mdiDelete}> </ha-svg-icon>
             ${this.hass.localize("ui.panel.config.areas.editor.delete")}
-            <ha-svg-icon class="warning" slot="graphic" .path=${mdiDelete}>
-            </ha-svg-icon>
-          </ha-list-item>
-        </ha-button-menu>
+          </ha-dropdown-item>
+        </ha-dropdown>
 
         <div class="container">
           <div class="column">
@@ -336,7 +332,7 @@ class HaConfigAreaPage extends LitElement {
             </ha-card>
           </div>
           <div class="column">
-            ${isComponentLoaded(this.hass, "automation")
+            ${isComponentLoaded(this.hass.config, "automation")
               ? html`
                   <ha-card
                     outlined
@@ -386,7 +382,7 @@ class HaConfigAreaPage extends LitElement {
                   </ha-card>
                 `
               : ""}
-            ${isComponentLoaded(this.hass, "scene")
+            ${isComponentLoaded(this.hass.config, "scene")
               ? html`
                   <ha-card
                     outlined
@@ -430,7 +426,7 @@ class HaConfigAreaPage extends LitElement {
                   </ha-card>
                 `
               : ""}
-            ${isComponentLoaded(this.hass, "script")
+            ${isComponentLoaded(this.hass.config, "script")
               ? html`
                   <ha-card
                     outlined
@@ -472,7 +468,7 @@ class HaConfigAreaPage extends LitElement {
               : ""}
           </div>
           <div class="column">
-            ${isComponentLoaded(this.hass, "logbook")
+            ${isComponentLoaded(this.hass.config, "logbook")
               ? html`
                   <ha-card
                     outlined
@@ -613,6 +609,19 @@ class HaConfigAreaPage extends LitElement {
     this._related = await findRelated(this.hass, "area", this.areaId);
   }
 
+  private _handleMenuAction(ev: HaDropdownSelectEvent) {
+    const action = ev.detail?.item?.value;
+    const entry = (ev.detail?.item as any)?.data as AreaRegistryEntry;
+    switch (action) {
+      case "edit":
+        this._openDialog(entry);
+        break;
+      case "delete":
+        this._deleteConfirm();
+        break;
+    }
+  }
+
   private _showSettings(ev: MouseEvent) {
     const entry: AreaRegistryEntry = (ev.currentTarget! as any).entry;
     this._openDialog(entry);
@@ -664,7 +673,10 @@ class HaConfigAreaPage extends LitElement {
           color: var(--secondary-text-color);
         }
         img {
-          border-radius: var(--ha-card-border-radius, 12px);
+          border-radius: var(
+            --ha-card-border-radius,
+            var(--ha-border-radius-lg)
+          );
           width: 100%;
         }
 
@@ -730,7 +742,7 @@ class HaConfigAreaPage extends LitElement {
           height: 100%;
           background-color: var(--card-background-color);
           opacity: 0.5;
-          border-radius: 50%;
+          border-radius: var(--ha-border-radius-circle);
         }
         ha-logbook {
           height: 400px;

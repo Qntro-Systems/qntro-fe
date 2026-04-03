@@ -2,16 +2,15 @@ import type { HassEntity } from "home-assistant-js-websocket/dist/types";
 import type { PropertyValues } from "lit";
 import { css, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { ifDefined } from "lit/directives/if-defined";
 import { classMap } from "lit/directives/class-map";
+import { ifDefined } from "lit/directives/if-defined";
 import { styleMap } from "lit/directives/style-map";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
-import { computeStateName } from "../../../common/entity/compute_state_name";
 import { isValidEntityId } from "../../../common/entity/valid_entity_id";
 import { getNumberFormatOptions } from "../../../common/number/format_number";
 import "../../../components/ha-card";
 import "../../../components/ha-gauge";
-import { UNAVAILABLE } from "../../../data/entity";
+import { UNAVAILABLE } from "../../../data/entity/entity";
 import type { ActionHandlerEvent } from "../../../data/lovelace/action_handler";
 import type { HomeAssistant } from "../../../types";
 import { actionHandler } from "../common/directives/action-handler-directive";
@@ -96,8 +95,6 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
       `;
     }
 
-    const entityState = Number(stateObj.state);
-
     if (stateObj.state === UNAVAILABLE) {
       return html`
         <hui-warning
@@ -126,13 +123,15 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
       `;
     }
 
-    const name = this._config.name ?? computeStateName(stateObj);
+    const name = this.hass.formatEntityName(stateObj, this._config.name);
 
     // Use `stateObj.state` as value to keep formatting (e.g trailing zeros)
     // for consistent value display across gauge, entity, entity-row, etc.
     return html`
       <ha-card
-        class=${classMap({ action: hasAnyAction(this._config) })}
+        class=${classMap({
+          action: hasAnyAction(this._config),
+        })}
         @action=${this._handleAction}
         .actionHandler=${actionHandler({
           hasHold: hasAction(this._config.hold_action),
@@ -158,12 +157,12 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
             .unit_of_measurement ||
           ""}
           style=${styleMap({
-            "--gauge-color": this._computeSeverity(entityState),
+            "--gauge-color": this._computeSeverity(Number(valueToDisplay)),
           })}
           .needle=${this._config!.needle}
           .levels=${this._config!.needle ? this._severityLevels() : undefined}
         ></ha-gauge>
-        <div class="name" .title=${name}>${name}</div>
+        <p class="title" .title=${name}>${name}</p>
       </ha-card>
     `;
   }
@@ -278,10 +277,15 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
   }
 
   static styles = css`
+    :host {
+      position: relative;
+      display: block;
+      height: 100%;
+    }
     ha-card {
       height: 100%;
       overflow: hidden;
-      padding: 16px;
+      padding: var(--ha-space-3);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -297,18 +301,23 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
       outline: none;
     }
 
+    .title {
+      width: 100%;
+      font-size: var(--ha-font-size-m);
+      line-height: var(--ha-line-height-expanded);
+      margin: 0;
+      text-align: center;
+      box-sizing: border-box;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: none;
+      color: var(--primary-text-color);
+    }
+
     ha-gauge {
       width: 100%;
       max-width: 250px;
-    }
-
-    .name {
-      text-align: center;
-      line-height: initial;
-      color: var(--primary-text-color);
-      width: 100%;
-      font-size: var(--ha-font-size-m);
-      margin-top: 8px;
     }
   `;
 }

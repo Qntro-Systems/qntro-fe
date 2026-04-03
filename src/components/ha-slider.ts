@@ -19,14 +19,19 @@ export class HaSlider extends Slider {
       Slider.styles,
       css`
         :host {
-          --wa-form-control-activated-color: var(--primary-color);
           --track-size: var(--ha-slider-track-size, 4px);
           --marker-height: calc(var(--ha-slider-track-size, 4px) / 2);
           --marker-width: calc(var(--ha-slider-track-size, 4px) / 2);
           --wa-color-surface-default: var(--card-background-color);
           --wa-color-neutral-fill-normal: var(--disabled-color);
-          --wa-tooltip-background-color: var(--secondary-background-color);
-          --wa-tooltip-color: var(--primary-text-color);
+          --wa-tooltip-background-color: var(
+            --ha-tooltip-background-color,
+            var(--secondary-background-color)
+          );
+          --wa-tooltip-content-color: var(
+            --ha-tooltip-text-color,
+            var(--primary-text-color)
+          );
           --wa-tooltip-font-family: var(
             --ha-tooltip-font-family,
             var(--ha-font-family-body)
@@ -43,35 +48,73 @@ export class HaSlider extends Slider {
             --ha-tooltip-line-height,
             var(--ha-line-height-condensed)
           );
-          --wa-tooltip-padding: 8px;
-          --wa-tooltip-border-radius: var(--ha-tooltip-border-radius, 4px);
+          --wa-tooltip-padding: var(--ha-tooltip-padding, var(--ha-space-2));
+          --wa-tooltip-border-radius: var(
+            --ha-tooltip-border-radius,
+            var(--ha-border-radius-sm)
+          );
           --wa-tooltip-arrow-size: var(--ha-tooltip-arrow-size, 8px);
-          --wa-z-index-tooltip: var(--ha-tooltip-z-index, 1000);
+          --wa-tooltip-border-width: 0px;
+          --wa-z-index-tooltip: 1000;
           min-width: 100px;
           min-inline-size: 100px;
           width: 200px;
         }
 
-        #thumb {
-          border: none;
+        /* Expand slider touch target to 32px */
+        #slider {
+          padding-block: 14px;
+          margin-block: -14px;
         }
 
-        #slider {
-          &:focus-visible:not(.disabled) #thumb,
-          &:focus-visible:not(.disabled) #thumb-min,
-          &:focus-visible:not(.disabled) #thumb-max {
-            outline: var(--wa-focus-ring);
-          }
+        #thumb {
+          border: none;
+          background-color: var(--ha-slider-thumb-color, var(--primary-color));
+          overflow: hidden;
+        }
+
+        #thumb:after {
+          content: "";
+          border-radius: 50%;
+          position: absolute;
+          width: calc(var(--thumb-width) * 2 + 8px);
+          height: calc(var(--thumb-height) * 2 + 8px);
+          left: calc(-50% - 4px);
+          top: calc(-50% - 4px);
+          cursor: pointer;
+        }
+
+        #slider:focus-visible:not(.disabled) #thumb,
+        #slider:focus-visible:not(.disabled) #thumb-min,
+        #slider:focus-visible:not(.disabled) #thumb-max {
+          outline: var(--wa-focus-ring);
+        }
+
+        #track:after {
+          content: "";
+          position: absolute;
+          top: calc(-50% - 4px);
+          left: 0;
+          width: 100%;
+          height: calc(var(--track-size) * 2 + 8px);
+          cursor: pointer;
+        }
+
+        #indicator {
+          background-color: var(
+            --ha-slider-indicator-color,
+            var(--primary-color)
+          );
         }
 
         :host([size="medium"]) {
-          --thumb-width: var(--ha-font-size-l, 1.25em);
-          --thumb-height: var(--ha-font-size-l, 1.25em);
+          --thumb-width: 20px;
+          --thumb-height: 20px;
         }
 
         :host([size="small"]) {
-          --thumb-width: var(--ha-font-size-m, 1em);
-          --thumb-height: var(--ha-font-size-m, 1em);
+          --thumb-width: 16px;
+          --thumb-height: 16px;
         }
       `,
     ];

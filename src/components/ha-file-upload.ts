@@ -4,14 +4,14 @@ import type { PropertyValues, TemplateResult } from "lit";
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
+import { ensureArray } from "../common/array/ensure-array";
 import { fireEvent } from "../common/dom/fire_event";
+import { blankBeforePercent } from "../common/translations/blank_before_percent";
+import type { LocalizeFunc } from "../common/translations/localize";
 import type { HomeAssistant } from "../types";
+import { bytesToString } from "../util/bytes-to-string";
 import "./ha-button";
 import "./ha-icon-button";
-import { blankBeforePercent } from "../common/translations/blank_before_percent";
-import { ensureArray } from "../common/array/ensure-array";
-import { bytesToString } from "../util/bytes-to-string";
-import type { LocalizeFunc } from "../common/translations/localize";
 
 declare global {
   interface HASSDomEvents {
@@ -242,7 +242,7 @@ export class HaFileUpload extends LitElement {
       align-items: center;
       border: solid 1px
         var(--mdc-text-field-idle-line-color, rgba(0, 0, 0, 0.42));
-      border-radius: var(--mdc-shape-small, 4px);
+      border-radius: var(--mdc-shape-small, var(--ha-border-radius-sm));
       height: 100%;
     }
     .row {
@@ -317,7 +317,7 @@ export class HaFileUpload extends LitElement {
     }
     ha-button {
       --mdc-button-outline-color: var(--primary-color);
-      --mdc-icon-button-size: 24px;
+      --ha-icon-button-size: 24px;
     }
     mwc-linear-progress {
       width: 100%;

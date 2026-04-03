@@ -23,13 +23,13 @@ import type { HassioHassOSInfo } from "../../../data/hassio/host";
 import { fetchHassioHassOsInfo } from "../../../data/hassio/host";
 import type { HassioInfo } from "../../../data/hassio/supervisor";
 import { fetchHassioInfo } from "../../../data/hassio/supervisor";
+import { subscribeSystemHealthInfo } from "../../../data/system_health";
 import { showShortcutsDialog } from "../../../dialogs/shortcuts/show-shortcuts-dialog";
 import "../../../layouts/hass-subpage";
 import { mdiHomeAssistant } from "../../../resources/home-assistant-logo-svg";
 import { haStyle } from "../../../resources/styles";
 import type { HomeAssistant, Route } from "../../../types";
 import { documentationUrl } from "../../../util/documentation-url";
-import { subscribeSystemHealthInfo } from "../../../data/system_health";
 
 const JS_TYPE = __BUILD__;
 const JS_VERSION = __VERSION__;
@@ -106,6 +106,8 @@ class HaConfigInfo extends LitElement {
     const hass = this.hass;
     const customUiList: { name: string; url: string; version: string }[] =
       (window as any).CUSTOM_UI_LIST || [];
+
+    const isDark = this.hass.themes?.darkMode || false;
 
     return html`
       <hass-subpage
@@ -186,7 +188,7 @@ class HaConfigInfo extends LitElement {
                 : nothing}
             </ul>
           </ha-card>
-          <ha-card outlined class="ohf">
+          <ha-card outlined class="ohf ${isDark ? "dark" : ""}">
             <div>
               ${this.hass.localize("ui.panel.config.info.proud_part_of")}
             </div>
@@ -271,7 +273,7 @@ class HaConfigInfo extends LitElement {
       }
     }, 2000);
 
-    if (isComponentLoaded(this.hass, "hassio")) {
+    if (isComponentLoaded(this.hass.config, "hassio")) {
       this._loadSupervisorInfo();
     }
 
@@ -346,6 +348,10 @@ class HaConfigInfo extends LitElement {
           max-width: 250px;
         }
 
+        .ohf.dark img {
+          color-scheme: dark;
+        }
+
         .versions {
           display: flex;
           flex-direction: column;
@@ -393,7 +399,7 @@ class HaConfigInfo extends LitElement {
         }
 
         .icon-background {
-          border-radius: 50%;
+          border-radius: var(--ha-border-radius-circle);
         }
 
         .custom-ui {

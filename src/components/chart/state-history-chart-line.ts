@@ -1,6 +1,6 @@
 import type { PropertyValues } from "lit";
 import { html, LitElement } from "lit";
-import { property, state } from "lit/decorators";
+import { customElement, property, state } from "lit/decorators";
 import type { VisualMapComponentOption } from "echarts/components";
 import type { LineSeriesOption } from "echarts/charts";
 import type { YAXisOption } from "echarts/types/dist/shared";
@@ -11,7 +11,7 @@ import { computeRTL } from "../../common/util/compute_rtl";
 import type { LineChartEntity, LineChartState } from "../../data/history";
 import type { HomeAssistant } from "../../types";
 import { MIN_TIME_BETWEEN_UPDATES } from "./ha-chart-base";
-import type { ECOption } from "../../resources/echarts";
+import type { ECOption } from "../../resources/echarts/echarts";
 import { formatDateTimeWithSeconds } from "../../common/datetime/format_date_time";
 import {
   getNumberFormatOptions,
@@ -21,12 +21,21 @@ import { measureTextWidth } from "../../util/text";
 import { fireEvent } from "../../common/dom/fire_event";
 import { CLIMATE_HVAC_ACTION_TO_MODE } from "../../data/climate";
 import { blankBeforeUnit } from "../../common/translations/blank_before_unit";
+import { filterXSS } from "../../common/util/xss";
 
 const safeParseFloat = (value) => {
   const parsed = parseFloat(value);
   return isFinite(parsed) ? parsed : null;
 };
 
+const CLIMATE_MODE_CONFIGS = [
+  { mode: "heat", action: "heating", cssVar: "--state-climate-heat-color" },
+  { mode: "cool", action: "cooling", cssVar: "--state-climate-cool-color" },
+  { mode: "dry", action: "drying", cssVar: "--state-climate-dry-color" },
+  { mode: "fan_only", action: "fan", cssVar: "--state-climate-fan_only-color" },
+] as const;
+
+@customElement("state-history-chart-line")
 export class StateHistoryChartLine extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
@@ -48,16 +57,16 @@ export class StateHistoryChartLine extends LitElement {
 
   @property({ attribute: false }) public endTime!: Date;
 
-  @property({ attribute: false, type: Number }) public paddingYAxis = 0;
+  @property({ attribute: false }) public paddingYAxis = 0;
 
-  @property({ attribute: false, type: Number }) public chartIndex?;
+  @property({ attribute: false }) public chartIndex?;
 
   @property({ attribute: "logarithmic-scale", type: Boolean })
   public logarithmicScale = false;
 
-  @property({ attribute: false, type: Number }) public minYAxis?: number;
+  @property({ attribute: false }) public minYAxis?: number;
 
-  @property({ attribute: false, type: Number }) public maxYAxis?: number;
+  @property({ attribute: false }) public maxYAxis?: number;
 
   @property({ attribute: "fit-y-data", type: Boolean }) public fitYData = false;
 
@@ -86,6 +95,8 @@ export class StateHistoryChartLine extends LitElement {
   private _chartTime: Date = new Date();
 
   private _previousYAxisLabelValue = 0;
+
+  private _yAxisMaximumFractionDigits = 0;
 
   protected render() {
     return html`
@@ -181,7 +192,7 @@ export class StateHistoryChartLine extends LitElement {
           }
 
           if (param.seriesName) {
-            return `${param.marker} ${param.seriesName}: ${value}`;
+            return `${param.marker} ${filterXSS(param.seriesName)}: ${value}`;
           }
           return `${param.marker} ${value}`;
         })
@@ -235,7 +246,9 @@ export class StateHistoryChartLine extends LitElement {
       changedProps.has("fitYData") ||
       changedProps.has("paddingYAxis") ||
       changedProps.has("_visualMap") ||
-      changedProps.has("_yWidth")
+      changedProps.has("_yWidth") ||
+      (changedProps.has("hass") &&
+        this._hasEntityStatesChanged(changedProps.get("hass")))
     ) {
       const rtl = computeRTL(this.hass);
       let minYAxis: number | ((values: { min: number }) => number) | undefined =
@@ -292,6 +305,19 @@ export class StateHistoryChartLine extends LitElement {
         legend: {
           type: "custom",
           show: this.showNames,
+          data: this._chartData
+            .map((d, i) => ({ dataset: d, entityId: this._entityIds[i] }))
+            .filter((item) => !(item.dataset as LineSeriesOption).areaStyle)
+            .map((item) => {
+              const stateObj = this.hass.states[item.entityId];
+              return {
+                id: item.dataset.id as string,
+                name: item.dataset.name as string,
+                value: stateObj
+                  ? this.hass.formatEntityState(stateObj)
+                  : undefined,
+              };
+            }),
         },
         grid: {
           top: 15,
@@ -302,11 +328,21 @@ export class StateHistoryChartLine extends LitElement {
         visualMap: this._visualMap,
         tooltip: {
           trigger: "axis",
-          appendTo: document.body,
+          renderMode: "html",
+          position: "bottom",
+          align: "center",
+          confine: true,
           formatter: this._renderTooltip,
         },
       };
     }
+  }
+
+  private _hasEntityStatesChanged(oldHass: HomeAssistant): boolean {
+    return this._entityIds.some(
+      (entityId) =>
+        this.hass.states[entityId]?.state !== oldHass.states[entityId]?.state
+    );
   }
 
   private _generateData() {
@@ -400,23 +436,18 @@ export class StateHistoryChartLine extends LitElement {
           (entityState) => entityState.attributes?.hvac_action
         );
 
-        const isHeating =
-          domain === "climate" && hasHvacAction
-            ? (entityState: LineChartState) =>
-                CLIMATE_HVAC_ACTION_TO_MODE[
-                  entityState.attributes?.hvac_action
-                ] === "heat"
-            : (entityState: LineChartState) => entityState.state === "heat";
-        const isCooling =
-          domain === "climate" && hasHvacAction
-            ? (entityState: LineChartState) =>
-                CLIMATE_HVAC_ACTION_TO_MODE[
-                  entityState.attributes?.hvac_action
-                ] === "cool"
-            : (entityState: LineChartState) => entityState.state === "cool";
-
-        const hasHeat = states.states.some(isHeating);
-        const hasCool = states.states.some(isCooling);
+        const activeModes = CLIMATE_MODE_CONFIGS.map(
+          ({ mode, action, cssVar }) => {
+            const isActive =
+              domain === "climate" && hasHvacAction
+                ? (entityState: LineChartState) =>
+                    CLIMATE_HVAC_ACTION_TO_MODE[
+                      entityState.attributes?.hvac_action
+                    ] === mode
+                : (entityState: LineChartState) => entityState.state === mode;
+            return { action, cssVar, isActive };
+          }
+        ).filter(({ isActive }) => states.states.some(isActive));
         // We differentiate between thermostats that have a target temperature
         // range versus ones that have just a target temperature
 
@@ -437,33 +468,19 @@ export class StateHistoryChartLine extends LitElement {
                 "component.climate.entity_component._.state_attributes.current_temperature.name"
               )
         );
-        if (hasHeat) {
+        for (const { action, cssVar } of activeModes) {
           addDataSet(
-            states.entity_id + "-heating",
+            `${states.entity_id}-${action}`,
             this.showNames
-              ? this.hass.localize("ui.card.climate.heating", { name: name })
+              ? this.hass.localize(`ui.card.climate.${action}`, {
+                  name: name,
+                })
               : this.hass.localize(
-                  "component.climate.entity_component._.state_attributes.hvac_action.state.heating"
+                  `component.climate.entity_component._.state_attributes.hvac_action.state.${action}`
                 ),
-            computedStyles.getPropertyValue("--state-climate-heat-color"),
+            computedStyles.getPropertyValue(cssVar),
             true
           );
-          // The "heating" series uses steppedArea to shade the area below the current
-          // temperature when the thermostat is calling for heat.
-        }
-        if (hasCool) {
-          addDataSet(
-            states.entity_id + "-cooling",
-            this.showNames
-              ? this.hass.localize("ui.card.climate.cooling", { name: name })
-              : this.hass.localize(
-                  "component.climate.entity_component._.state_attributes.hvac_action.state.cooling"
-                ),
-            computedStyles.getPropertyValue("--state-climate-cool-color"),
-            true
-          );
-          // The "cooling" series uses steppedArea to shade the area below the current
-          // temperature when the thermostat is calling for heat.
         }
 
         if (hasTargetRange) {
@@ -511,11 +528,8 @@ export class StateHistoryChartLine extends LitElement {
             entityState.attributes.current_temperature
           );
           const series = [curTemp];
-          if (hasHeat) {
-            series.push(isHeating(entityState) ? curTemp : null);
-          }
-          if (hasCool) {
-            series.push(isCooling(entityState) ? curTemp : null);
+          for (const { isActive } of activeModes) {
+            series.push(isActive(entityState) ? curTemp : null);
           }
           if (hasTargetRange) {
             const targetHigh = safeParseFloat(
@@ -712,6 +726,18 @@ export class StateHistoryChartLine extends LitElement {
       // Add an entry for final values
       pushData(endTime, prevValues);
 
+      // For sensors, append current state if viewing recent data
+      const now = new Date();
+      // allow 1s of leeway for "now"
+      const isUpToNow = now.getTime() - endTime.getTime() <= 1000;
+      if (domain === "sensor" && isUpToNow && data.length === 1) {
+        const stateObj = this.hass.states[states.entity_id];
+        const currentValue = stateObj ? safeParseFloat(stateObj.state) : null;
+        if (currentValue !== null) {
+          data[0].data!.push([now, currentValue]);
+        }
+      }
+
       // Concat two arrays
       Array.prototype.push.apply(datasets, data);
     });
@@ -757,8 +783,12 @@ export class StateHistoryChartLine extends LitElement {
         Math.log10(Math.abs(value - this._previousYAxisLabelValue || 1))
       )
     );
+    this._yAxisMaximumFractionDigits = Math.max(
+      this._yAxisMaximumFractionDigits,
+      maximumFractionDigits
+    );
     const label = formatNumber(value, this.hass.locale, {
-      maximumFractionDigits,
+      maximumFractionDigits: this._yAxisMaximumFractionDigits,
     });
     const width = measureTextWidth(label, 12) + 5;
     if (width > this._yWidth) {
@@ -789,7 +819,6 @@ export class StateHistoryChartLine extends LitElement {
     return Math.abs(value) < 1 ? value : roundingFn(value);
   }
 }
-customElements.define("state-history-chart-line", StateHistoryChartLine);
 
 declare global {
   interface HTMLElementTagNameMap {

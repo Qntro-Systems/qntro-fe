@@ -1,3 +1,4 @@
+import { consume, type ContextType } from "@lit/context";
 import { mdiArrowDown, mdiArrowUp, mdiChevronUp } from "@mdi/js";
 import deepClone from "deep-clone-simple";
 import type { CSSResultGroup, PropertyValues, TemplateResult } from "lit";
@@ -13,21 +14,23 @@ import { classMap } from "lit/directives/class-map";
 import { ifDefined } from "lit/directives/if-defined";
 import { styleMap } from "lit/directives/style-map";
 import memoizeOne from "memoize-one";
+import { STRINGS_SEPARATOR_DOT } from "../../common/const";
 import { restoreScroll } from "../../common/decorators/restore-scroll";
 import { fireEvent } from "../../common/dom/fire_event";
 import { stringCompare } from "../../common/string/compare";
+import type { LocalizeFunc } from "../../common/translations/localize";
 import { debounce } from "../../common/util/debounce";
 import { groupBy } from "../../common/util/group-by";
+import { nextRender } from "../../common/util/render-status";
+import { localeContext, localizeContext } from "../../data/context";
+import type { FrontendLocaleData } from "../../data/translation";
 import { haStyleScrollbar } from "../../resources/styles";
 import { loadVirtualizer } from "../../resources/virtualizer";
-import type { HomeAssistant } from "../../types";
 import "../ha-checkbox";
 import type { HaCheckbox } from "../ha-checkbox";
 import "../ha-svg-icon";
-import "../search-input";
+import "../input/ha-input-search";
 import { filterData, sortData } from "./sort-filter";
-import type { LocalizeFunc } from "../../common/translations/localize";
-import { nextRender } from "../../common/util/render-status";
 
 export interface RowClickedEvent {
   id: string;
@@ -85,6 +88,7 @@ export interface DataTableColumnData<T = any> extends DataTableSortColumnData {
   flex?: number;
   forceLTR?: boolean;
   hidden?: boolean;
+  lastFixed?: boolean;
 }
 
 export type ClonedDataTableColumnData = Omit<DataTableColumnData, "title"> & {
@@ -102,9 +106,13 @@ const UNDEFINED_GROUP_KEY = "zzzzz_undefined";
 
 @customElement("ha-data-table")
 export class HaDataTable extends LitElement {
-  @property({ attribute: false }) public hass!: HomeAssistant;
+  @state()
+  @consume({ context: localizeContext, subscribe: true })
+  private _localize?: ContextType<typeof localizeContext>;
 
-  @property({ attribute: false }) public localizeFunc?: LocalizeFunc;
+  @state()
+  @consume({ context: localeContext, subscribe: true })
+  private _locale?: ContextType<typeof localeContext>;
 
   @property({ type: Boolean }) public narrow = false;
 
@@ -115,8 +123,6 @@ export class HaDataTable extends LitElement {
   @property({ type: Boolean }) public selectable = false;
 
   @property({ type: Boolean }) public clickable = false;
-
-  @property({ attribute: "has-fab", type: Boolean }) public hasFab = false;
 
   /**
    * Add an extra row at the bottom of the data table
@@ -130,12 +136,9 @@ export class HaDataTable extends LitElement {
   // eslint-disable-next-line lit/no-native-attributes
   @property({ type: String }) public id = "id";
 
-  @property({ attribute: false, type: String }) public noDataText?: string;
+  @property({ attribute: false }) public noDataText?: string;
 
-  @property({ attribute: false, type: String }) public searchLabel?: string;
-
-  @property({ type: Boolean, attribute: "no-label-float" })
-  public noLabelFloat? = false;
+  @property({ attribute: false }) public searchLabel?: string;
 
   @property({ type: String }) public filter = "";
 
@@ -298,6 +301,18 @@ export class HaDataTable extends LitElement {
     }
 
     if (properties.has("data")) {
+      // Clean up checked rows that no longer exist in the data
+      if (this._checkedRows.length) {
+        const validIds = new Set(this.data.map((row) => String(row[this.id])));
+        const validCheckedRows = this._checkedRows.filter((id) =>
+          validIds.has(id)
+        );
+        if (validCheckedRows.length !== this._checkedRows.length) {
+          this._checkedRows = validCheckedRows;
+          this._checkedRowsChanged();
+        }
+      }
+
       this._checkableRowsCount = this.data.filter(
         (row) => row.selectable !== false
       ).length;
@@ -346,6 +361,11 @@ export class HaDataTable extends LitElement {
         .sort((a, b) => {
           const orderA = columnOrder!.indexOf(a);
           const orderB = columnOrder!.indexOf(b);
+          const fixedA = Boolean(columns[a].lastFixed);
+          const fixedB = Boolean(columns[b].lastFixed);
+          if (fixedA !== fixedB) {
+            return fixedA ? 1 : -1;
+          }
           if (orderA !== orderB) {
             if (orderA === -1) {
               return 1;
@@ -364,8 +384,6 @@ export class HaDataTable extends LitElement {
   );
 
   protected render() {
-    const localize = this.localizeFunc || this.hass.localize;
-
     const columns = this._sortedColumns(this.columns, this.columnOrder);
 
     const renderRow = (row: DataTableRowData, index: number) =>
@@ -377,12 +395,11 @@ export class HaDataTable extends LitElement {
           ${this._filterable
             ? html`
                 <div class="table-header">
-                  <search-input
-                    .hass=${this.hass}
-                    @value-changed=${this._handleSearchChange}
-                    .label=${this.searchLabel}
-                    .noLabelFloat=${this.noLabelFloat}
-                  ></search-input>
+                  <ha-input-search
+                    appearance="outlined"
+                    @input=${this._handleSearchChange}
+                    .placeholder=${this.searchLabel}
+                  ></ha-input-search>
                 </div>
               `
             : ""}
@@ -415,9 +432,9 @@ export class HaDataTable extends LitElement {
                       <ha-checkbox
                         class="mdc-data-table__row-checkbox"
                         @change=${this._handleHeaderRowCheckboxClick}
-                        .indeterminate=${this._checkedRows.length &&
+                        .indeterminate=${!!this._checkedRows.length &&
                         this._checkedRows.length !== this._checkableRowsCount}
-                        .checked=${this._checkedRows.length &&
+                        .checked=${!!this._checkedRows.length &&
                         this._checkedRows.length === this._checkableRowsCount}
                       >
                       </ha-checkbox>
@@ -490,7 +507,8 @@ export class HaDataTable extends LitElement {
                   <div class="mdc-data-table__row" role="row">
                     <div class="mdc-data-table__cell grows center" role="cell">
                       ${this.noDataText ||
-                      localize("ui.components.data-table.no-data")}
+                      this._localize?.("ui.components.data-table.no-data") ||
+                      "No data"}
                     </div>
                   </div>
                 </div>
@@ -502,9 +520,9 @@ export class HaDataTable extends LitElement {
                   @scroll=${this._saveScrollPos}
                   .items=${this._groupData(
                     this._filteredData,
-                    localize,
+                    this._localize,
+                    this._locale,
                     this.appendRow,
-                    this.hasFab,
                     this.groupColumn,
                     this.groupOrder,
                     this._collapsedGroups,
@@ -624,7 +642,7 @@ export class HaDataTable extends LitElement {
                           .map(
                             ([key2, column2], i) =>
                               html`${i !== 0
-                                ? " · "
+                                ? STRINGS_SEPARATOR_DOT
                                 : nothing}${column2.template
                                 ? column2.template(row)
                                 : row[key2]}`
@@ -673,7 +691,7 @@ export class HaDataTable extends LitElement {
             this._sortColumns[this.sortColumn],
             this.sortDirection,
             this.sortColumn,
-            this.hass.locale.language
+            this._locale?.language
           )
         : filteredData;
 
@@ -699,16 +717,16 @@ export class HaDataTable extends LitElement {
   private _groupData = memoizeOne(
     (
       data: DataTableRowData[],
-      localize: LocalizeFunc,
+      localize: LocalizeFunc | undefined,
+      locale: FrontendLocaleData | undefined,
       appendRow,
-      hasFab: boolean,
       groupColumn: string | undefined,
       groupOrder: string[] | undefined,
       collapsedGroups: string[],
       sortColumn: string | undefined,
       sortDirection: SortingDirection
     ) => {
-      if (appendRow || hasFab || groupColumn) {
+      if (appendRow || groupColumn) {
         let items = [...data];
 
         if (groupColumn) {
@@ -724,11 +742,7 @@ export class HaDataTable extends LitElement {
           )
             .sort((a, b) => {
               if (!groupOrder && isGroupSortColumn) {
-                const comparison = stringCompare(
-                  a,
-                  b,
-                  this.hass.locale.language
-                );
+                const comparison = stringCompare(a, b, locale?.language);
                 if (sortDirection === "asc") {
                   return comparison;
                 }
@@ -749,7 +763,7 @@ export class HaDataTable extends LitElement {
               return stringCompare(
                 ["", "-", "—"].includes(a) ? "zzz" : a,
                 ["", "-", "—"].includes(b) ? "zzz" : b,
-                this.hass.locale.language
+                locale?.language
               );
             })
             .reduce(
@@ -776,14 +790,15 @@ export class HaDataTable extends LitElement {
               >
                 <ha-icon-button
                   .path=${mdiChevronUp}
-                  .label=${this.hass.localize(
+                  .label=${localize?.(
                     `ui.components.data-table.${collapsed ? "expand" : "collapse"}`
-                  )}
+                  ) || (collapsed ? "Expand" : "Collapse")}
                   class=${collapsed ? "collapsed" : ""}
                 >
                 </ha-icon-button>
                 ${groupName === UNDEFINED_GROUP_KEY
-                  ? localize("ui.components.data-table.ungrouped")
+                  ? localize?.("ui.components.data-table.ungrouped") ||
+                    "Ungrouped"
                   : groupName || ""}
               </div>`,
             });
@@ -798,13 +813,11 @@ export class HaDataTable extends LitElement {
           items.push({ append: true, selectable: false, content: appendRow });
         }
 
-        if (hasFab) {
-          items.push({ empty: true });
-        }
+        items.push({ empty: true });
 
         return items;
       }
-      return data;
+      return [...data, { empty: true }];
     }
   );
 
@@ -826,10 +839,10 @@ export class HaDataTable extends LitElement {
     } else if (this.sortDirection === "asc") {
       this.sortDirection = "desc";
     } else {
-      this.sortDirection = null;
+      this.sortDirection = "asc";
     }
 
-    this.sortColumn = this.sortDirection === null ? undefined : columnId;
+    this.sortColumn = columnId;
 
     fireEvent(this, "sorting-changed", {
       column: columnId,
@@ -854,9 +867,9 @@ export class HaDataTable extends LitElement {
 
     const groupedData = this._groupData(
       this._filteredData,
-      this.localizeFunc || this.hass.localize,
+      this._localize,
+      this._locale,
       this.appendRow,
-      this.hasFab,
       this.groupColumn,
       this.groupOrder,
       this._collapsedGroups,
@@ -962,12 +975,12 @@ export class HaDataTable extends LitElement {
     });
   }
 
-  private _handleSearchChange(ev: CustomEvent): void {
+  private _handleSearchChange(ev: InputEvent): void {
     if (this.filter) {
       return;
     }
     this._lastSelectedRowId = null;
-    this._debounceSearch(ev.detail.value);
+    this._debounceSearch((ev.target as HTMLInputElement).value);
   }
 
   private async _calcTableHeight() {
@@ -1053,7 +1066,7 @@ export class HaDataTable extends LitElement {
 
         .mdc-data-table {
           background-color: var(--data-table-background-color);
-          border-radius: 4px;
+          border-radius: var(--ha-border-radius-sm);
           border-width: 1px;
           border-style: solid;
           border-color: var(--divider-color);
@@ -1076,7 +1089,7 @@ export class HaDataTable extends LitElement {
         .mdc-data-table__row.empty-row {
           height: var(
             --data-table-empty-row-height,
-            var(--data-table-row-height, 52px)
+            var(--safe-area-inset-bottom, 0px)
           );
         }
 
@@ -1180,6 +1193,7 @@ export class HaDataTable extends LitElement {
 
         .mdc-data-table__cell--numeric {
           text-align: var(--float-end);
+          direction: ltr;
         }
 
         .mdc-data-table__cell--icon {
@@ -1352,6 +1366,9 @@ export class HaDataTable extends LitElement {
         .mdc-data-table__header-cell > * {
           transition: var(--float-start) 0.2s ease;
         }
+        .mdc-data-table__header-cell--numeric > span {
+          transition: none;
+        }
         .mdc-data-table__header-cell ha-svg-icon {
           top: -3px;
           position: absolute;
@@ -1376,11 +1393,9 @@ export class HaDataTable extends LitElement {
         .table-header {
           border-bottom: 1px solid var(--divider-color);
         }
-        search-input {
-          display: block;
+        ha-input-search {
           flex: 1;
-          --mdc-text-field-fill-color: var(--sidebar-background-color);
-          --mdc-text-field-idle-line-color: transparent;
+          padding: var(--ha-space-3);
         }
         slot[name="header"] {
           display: block;
@@ -1390,6 +1405,9 @@ export class HaDataTable extends LitElement {
         }
         .secondary {
           color: var(--secondary-text-color);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .scroller {
           height: calc(100% - 57px);

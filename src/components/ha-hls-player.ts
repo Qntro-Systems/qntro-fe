@@ -60,6 +60,10 @@ class HaHLSPlayer extends LitElement {
   private static streamCount = 0;
 
   private _handleVisibilityChange = () => {
+    if (document.pictureInPictureElement) {
+      // video is playing in picture-in-picture mode, don't do anything
+      return;
+    }
     if (document.hidden) {
       this._cleanUp();
     } else {
@@ -136,7 +140,7 @@ class HaHLSPlayer extends LitElement {
     this._cleanUp();
     this._resetError();
 
-    if (!isComponentLoaded(this.hass!, "stream")) {
+    if (!isComponentLoaded(this.hass.config, "stream")) {
       this._setFatalError("Streaming component is not loaded.");
       return;
     }
@@ -321,7 +325,7 @@ class HaHLSPlayer extends LitElement {
               } else if (data.response.code >= 400) {
                 error += " (Stream never started)";
               } else {
-                error += " (" + data.response.code + ")";
+                error += ` (${data.response.code})`;
               }
             }
             this._setRetryableError(error);

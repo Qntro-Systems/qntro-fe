@@ -23,6 +23,8 @@ import {
   fetchHassioHassOsInfo,
   fetchHassioHostInfo,
 } from "../../../data/hassio/host";
+import type { LabPreviewFeature } from "../../../data/labs";
+import { fetchLabFeatures } from "../../../data/labs";
 import { showRestartDialog } from "../../../dialogs/restart/show-dialog-restart";
 import "../../../layouts/hass-subpage";
 import { haStyle } from "../../../resources/styles";
@@ -49,6 +51,8 @@ class HaConfigSystemNavigation extends LitElement {
   @state() private _storageInfo?: { used: number; free: number; total: number };
 
   @state() private _externalAccess = false;
+
+  @state() private _labFeatures?: LabPreviewFeature[];
 
   protected render(): TemplateResult {
     const pages = configSections.general
@@ -83,7 +87,9 @@ class HaConfigSystemNavigation extends LitElement {
             description = this._storageInfo
               ? this.hass.localize("ui.panel.config.storage.description", {
                   percent_used: `${Math.round(
-                    (this._storageInfo.used / this._storageInfo.total) * 100
+                    ((this._storageInfo.total - this._storageInfo.free) /
+                      this._storageInfo.total) *
+                      100
                   )}${blankBeforePercent(this.hass.locale)}%`,
                   free_space: `${this._storageInfo.free} GB`,
                 })
@@ -93,6 +99,12 @@ class HaConfigSystemNavigation extends LitElement {
             description =
               this._boardName ||
               this.hass.localize("ui.panel.config.hardware.description");
+            break;
+          case "labs":
+            description =
+              this._labFeatures && this._labFeatures.some((f) => f.enabled)
+                ? this.hass.localize("ui.panel.config.labs.description_enabled")
+                : this.hass.localize("ui.panel.config.labs.description");
             break;
 
           default:
@@ -153,16 +165,20 @@ class HaConfigSystemNavigation extends LitElement {
     super.firstUpdated(_changedProperties);
 
     this._fetchNetworkStatus();
-    const isHassioLoaded = isComponentLoaded(this.hass, "hassio");
+    const isHassioLoaded = isComponentLoaded(this.hass.config, "hassio");
     this._fetchBackupInfo();
     this._fetchHardwareInfo(isHassioLoaded);
+    this._fetchLabFeatures();
     if (isHassioLoaded) {
       this._fetchStorageInfo();
     }
   }
 
   private async _fetchBackupInfo() {
-    const backups: BackupContent[] = isComponentLoaded(this.hass, "backup")
+    const backups: BackupContent[] = isComponentLoaded(
+      this.hass.config,
+      "backup"
+    )
       ? await fetchBackupInfo(this.hass).then(
           (backupData) => backupData.backups
         )
@@ -176,7 +192,7 @@ class HaConfigSystemNavigation extends LitElement {
   }
 
   private async _fetchHardwareInfo(isHassioLoaded: boolean) {
-    if (isComponentLoaded(this.hass, "hardware")) {
+    if (isComponentLoaded(this.hass.config, "hardware")) {
       const hardwareInfo: HardwareInfo = await this.hass.callWS({
         type: "hardware/info",
       });
@@ -201,7 +217,7 @@ class HaConfigSystemNavigation extends LitElement {
   }
 
   private async _fetchNetworkStatus() {
-    if (isComponentLoaded(this.hass, "cloud")) {
+    if (isComponentLoaded(this.hass.config, "cloud")) {
       const cloudStatus = await fetchCloudStatus(this.hass);
       if (cloudStatus.logged_in) {
         this._externalAccess = true;
@@ -209,6 +225,12 @@ class HaConfigSystemNavigation extends LitElement {
       }
     }
     this._externalAccess = this.hass.config.external_url !== null;
+  }
+
+  private async _fetchLabFeatures() {
+    if (isComponentLoaded(this.hass.config, "labs")) {
+      this._labFeatures = await fetchLabFeatures(this.hass);
+    }
   }
 
   private async _showRestartDialog() {
@@ -257,7 +279,7 @@ class HaConfigSystemNavigation extends LitElement {
         @media all and (max-width: 600px) {
           ha-card {
             border-width: 1px 0;
-            border-radius: 0;
+            border-radius: var(--ha-border-radius-square);
             box-shadow: unset;
           }
           ha-config-section {

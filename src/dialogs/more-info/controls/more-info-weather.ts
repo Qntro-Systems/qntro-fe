@@ -16,6 +16,7 @@ import "../../../components/ha-tab-group";
 import "../../../components/ha-tab-group-tab";
 import "../../../components/ha-tooltip";
 import type {
+  ForecastAttribute,
   ForecastEvent,
   ModernForecastType,
   WeatherEntity,
@@ -130,6 +131,24 @@ class MoreInfoWeather extends LitElement {
   private _supportedForecasts = memoizeOne((stateObj: WeatherEntity) =>
     getSupportedForecastTypes(stateObj)
   );
+
+  private _groupForecastByDay = memoizeOne((forecast: ForecastAttribute[]) => {
+    if (!forecast) return [];
+
+    const grouped = new Map<string, NonNullable<typeof forecast>>();
+
+    forecast.forEach((item) => {
+      const date = new Date(item.datetime);
+      const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
+      if (!grouped.has(dateKey)) {
+        grouped.set(dateKey, []);
+      }
+      grouped.get(dateKey)!.push(item);
+    });
+
+    return Array.from(grouped.values());
+  });
 
   protected render() {
     if (!this.hass || !this.stateObj) {
@@ -294,101 +313,119 @@ class MoreInfoWeather extends LitElement {
             </div>
           `
         : nothing}
-
-      <div class="section">
-        ${this.hass.localize("ui.card.weather.forecast")}:
-      </div>
-      ${supportedForecasts?.length > 1
-        ? html`<ha-tab-group @wa-tab-show=${this._handleForecastTypeChanged}>
-            ${supportedForecasts.map(
-              (forecastType) =>
-                html`<ha-tab-group-tab
-                  slot="nav"
-                  .panel=${forecastType}
-                  .active=${this._forecastType === forecastType}
+      ${supportedForecasts?.length
+        ? html`
+            <div class="section">
+              ${this.hass.localize("ui.card.weather.forecast")}:
+            </div>
+            ${supportedForecasts?.length > 1
+              ? html`<ha-tab-group
+                  @wa-tab-show=${this._handleForecastTypeChanged}
                 >
-                  ${this.hass!.localize(`ui.card.weather.${forecastType}`)}
-                </ha-tab-group-tab>`
-            )}
-          </ha-tab-group>`
-        : nothing}
-      <div class="forecast">
-        ${forecast?.length
-          ? forecast.map((item) =>
-              this._showValue(item.templow) || this._showValue(item.temperature)
-                ? html`
-                    <div>
-                      <div>
-                        ${dayNight
-                          ? html`
+                  ${supportedForecasts.map(
+                    (forecastType) =>
+                      html`<ha-tab-group-tab
+                        slot="nav"
+                        .panel=${forecastType}
+                        .active=${this._forecastType === forecastType}
+                      >
+                        ${this.hass!.localize(
+                          `ui.card.weather.${forecastType}`
+                        )}
+                      </ha-tab-group-tab>`
+                  )}
+                </ha-tab-group>`
+              : nothing}
+            <div class="forecast">
+              ${forecast?.length
+                ? this._groupForecastByDay(forecast).map((dayForecast) => {
+                    const showDayHeader = hourly || dayNight;
+                    return html`
+                      <div class="forecast-day">
+                        ${showDayHeader
+                          ? html`<div class="forecast-day-header">
                               ${formatDateWeekdayShort(
-                                new Date(item.datetime),
+                                new Date(dayForecast[0].datetime),
                                 this.hass!.locale,
                                 this.hass!.config
                               )}
-                              <div class="daynight">
-                                ${item.is_daytime !== false
-                                  ? this.hass!.localize("ui.card.weather.day")
-                                  : this.hass!.localize(
-                                      "ui.card.weather.night"
-                                    )}<br />
-                              </div>
-                            `
-                          : hourly
-                            ? html`
-                                ${formatTime(
-                                  new Date(item.datetime),
-                                  this.hass!.locale,
-                                  this.hass!.config
-                                )}
-                              `
-                            : html`
-                                ${formatDateWeekdayShort(
-                                  new Date(item.datetime),
-                                  this.hass!.locale,
-                                  this.hass!.config
-                                )}
-                              `}
+                            </div>`
+                          : nothing}
+                        <div class="forecast-day-content">
+                          ${dayForecast.map((item) =>
+                            this._showValue(item.templow) ||
+                            this._showValue(item.temperature)
+                              ? html`
+                                  <div class="forecast-item">
+                                    <div
+                                      class="forecast-item-label ${showDayHeader
+                                        ? ""
+                                        : "no-header"}"
+                                    >
+                                      ${hourly
+                                        ? formatTime(
+                                            new Date(item.datetime),
+                                            this.hass!.locale,
+                                            this.hass!.config
+                                          )
+                                        : dayNight
+                                          ? html`<div class="daynight">
+                                              ${item.is_daytime !== false
+                                                ? this.hass!.localize(
+                                                    "ui.card.weather.day"
+                                                  )
+                                                : this.hass!.localize(
+                                                    "ui.card.weather.night"
+                                                  )}
+                                            </div>`
+                                          : formatDateWeekdayShort(
+                                              new Date(item.datetime),
+                                              this.hass!.locale,
+                                              this.hass!.config
+                                            )}
+                                    </div>
+                                    ${this._showValue(item.condition)
+                                      ? html`
+                                          <div class="forecast-image-icon">
+                                            ${getWeatherStateIcon(
+                                              item.condition!,
+                                              this,
+                                              !(
+                                                item.is_daytime ||
+                                                item.is_daytime === undefined
+                                              )
+                                            )}
+                                          </div>
+                                        `
+                                      : nothing}
+                                    <div class="temp">
+                                      ${this._showValue(item.temperature)
+                                        ? html`${formatNumber(
+                                            item.temperature,
+                                            this.hass!.locale
+                                          )}°`
+                                        : "—"}
+                                    </div>
+                                    <div class="templow">
+                                      ${this._showValue(item.templow)
+                                        ? html`${formatNumber(
+                                            item.templow!,
+                                            this.hass!.locale
+                                          )}°`
+                                        : nothing}
+                                    </div>
+                                  </div>
+                                `
+                              : nothing
+                          )}
+                        </div>
                       </div>
-                      ${this._showValue(item.condition)
-                        ? html`
-                            <div class="forecast-image-icon">
-                              ${getWeatherStateIcon(
-                                item.condition!,
-                                this,
-                                !(
-                                  item.is_daytime ||
-                                  item.is_daytime === undefined
-                                )
-                              )}
-                            </div>
-                          `
-                        : nothing}
-                      <div class="temp">
-                        ${this._showValue(item.temperature)
-                          ? html`${formatNumber(
-                              item.temperature,
-                              this.hass!.locale
-                            )}°`
-                          : "—"}
-                      </div>
-                      <div class="templow">
-                        ${this._showValue(item.templow)
-                          ? html`${formatNumber(
-                              item.templow!,
-                              this.hass!.locale
-                            )}°`
-                          : hourly
-                            ? nothing
-                            : "—"}
-                      </div>
-                    </div>
-                  `
-                : nothing
-            )
-          : html`<ha-spinner size="medium"></ha-spinner>`}
-      </div>
-
+                    `;
+                  })
+                : html`<ha-spinner size="medium"></ha-spinner>`}
+            </div>
+          `
+        : nothing}
       ${this.stateObj.attributes.attribution
         ? html`
             <div class="attribution">
@@ -409,13 +446,13 @@ class MoreInfoWeather extends LitElement {
       css`
         ha-svg-icon {
           color: var(--state-icon-color);
-          margin-left: 8px;
-          margin-inline-start: 8px;
+          margin-left: var(--ha-space-2);
+          margin-inline-start: var(--ha-space-2);
           margin-inline-end: initial;
         }
 
         .section {
-          margin: 16px 0 8px 0;
+          margin: var(--ha-space-4) 0 var(--ha-space-2) 0;
           font-size: 1.2em;
         }
 
@@ -439,14 +476,14 @@ class MoreInfoWeather extends LitElement {
 
         .main {
           flex: 1;
-          margin-left: 24px;
-          margin-inline-start: 24px;
+          margin-left: var(--ha-space-6);
+          margin-inline-start: var(--ha-space-6);
           margin-inline-end: initial;
         }
 
         .attribution {
           text-align: center;
-          margin-top: 16px;
+          margin-top: var(--ha-space-4);
         }
 
         .time-ago,
@@ -469,15 +506,15 @@ class MoreInfoWeather extends LitElement {
           flex-wrap: nowrap;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 16px;
+          margin-bottom: var(--ha-space-4);
         }
 
         .icon-image {
           display: flex;
           align-items: center;
           min-width: 64px;
-          margin-right: 16px;
-          margin-inline-end: 16px;
+          margin-right: var(--ha-space-4);
+          margin-inline-end: var(--ha-space-4);
           margin-inline-start: initial;
         }
 
@@ -503,7 +540,7 @@ class MoreInfoWeather extends LitElement {
 
         .temp-attribute .temp {
           position: relative;
-          margin-right: 24px;
+          margin-right: var(--ha-space-6);
           direction: ltr;
         }
 
@@ -526,8 +563,8 @@ class MoreInfoWeather extends LitElement {
 
         .name-state {
           overflow: hidden;
-          padding-right: 12px;
-          padding-inline-end: 12px;
+          padding-right: var(--ha-space-3);
+          padding-inline-end: var(--ha-space-3);
           padding-inline-start: initial;
           width: 100%;
         }
@@ -541,7 +578,7 @@ class MoreInfoWeather extends LitElement {
         .forecast {
           display: flex;
           justify-content: space-around;
-          padding: 16px;
+          padding: var(--ha-space-4);
           padding-bottom: 0px;
           overflow-x: auto;
           scrollbar-color: var(--scrollbar-thumb-color) transparent;
@@ -556,14 +593,46 @@ class MoreInfoWeather extends LitElement {
           user-select: none;
         }
 
-        .forecast > div {
+        .forecast-day {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .forecast-day-header {
+          position: sticky;
+          top: 0;
+          left: 0;
+          color: var(--primary-text-color);
+          z-index: 1;
+          padding: 0 var(--ha-space-3) var(--ha-space-1) var(--ha-space-3);
+          width: fit-content;
+          width: 40px;
           text-align: center;
-          padding: 0 10px;
+          font-weight: var(--ha-font-weight-semi-bold);
+        }
+
+        .forecast-day-content {
+          display: flex;
+          flex-direction: row;
+        }
+
+        .forecast-item {
+          text-align: center;
+          padding: 0 var(--ha-space-3);
+        }
+
+        .forecast-item-label {
+          font-size: var(--ha-font-size-m);
+          color: var(--secondary-text-color);
+        }
+
+        .forecast-item-label.no-header {
+          color: var(--primary-text-color);
         }
 
         .forecast .icon,
         .forecast .temp {
-          margin: 4px 0;
+          margin: var(--ha-space-1) 0;
         }
 
         .forecast .temp {
@@ -571,8 +640,8 @@ class MoreInfoWeather extends LitElement {
         }
 
         .forecast-image-icon {
-          padding-top: 4px;
-          padding-bottom: 4px;
+          padding-top: var(--ha-space-1);
+          padding-bottom: var(--ha-space-1);
           display: flex;
           justify-content: center;
         }

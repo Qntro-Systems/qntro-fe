@@ -4,14 +4,14 @@ import type { CSSResultGroup, PropertyValues } from "lit";
 import { css, html, LitElement, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators";
 import { fireEvent } from "../common/dom/fire_event";
-import type { HomeAssistant } from "../types";
-import { haStyle } from "../resources/styles";
-import "./ha-code-editor";
-import { showToast } from "../util/toast";
 import { copyToClipboard } from "../common/util/copy-clipboard";
-import type { HaCodeEditor } from "./ha-code-editor";
-import "./ha-button";
+import { haStyle } from "../resources/styles";
+import type { HomeAssistant } from "../types";
+import { showToast } from "../util/toast";
 import "./ha-alert";
+import "./ha-button";
+import "./ha-code-editor";
+import type { HaCodeEditor } from "./ha-code-editor";
 
 const isEmpty = (obj: Record<string, unknown>): boolean => {
   if (typeof obj !== "object" || obj === null) {
@@ -46,6 +46,9 @@ export class HaYamlEditor extends LitElement {
 
   @property({ type: Boolean, attribute: "disable-fullscreen" })
   public disableFullscreen = false;
+
+  @property({ type: Boolean, attribute: "in-dialog" })
+  public inDialog = false;
 
   @property({ type: Boolean }) public required = false;
 
@@ -101,6 +104,13 @@ export class HaYamlEditor extends LitElement {
     }
   }
 
+  public disableCodeEditorFullscreen(): void {
+    this.disableFullscreen = true;
+    if (this._codeEditor) {
+      this._codeEditor.disableFullscreen = true;
+    }
+  }
+
   protected render() {
     if (this._yaml === undefined) {
       return nothing;
@@ -114,6 +124,7 @@ export class HaYamlEditor extends LitElement {
         .value=${this._yaml}
         .readOnly=${this.readOnly}
         .disableFullscreen=${this.disableFullscreen}
+        .inDialog=${this.inDialog}
         mode="yaml"
         autocomplete-entities
         autocomplete-icons
@@ -203,8 +214,9 @@ export class HaYamlEditor extends LitElement {
         .card-actions {
           border-radius: var(
             --actions-border-radius,
-            0px 0px var(--ha-card-border-radius, 12px)
-              var(--ha-card-border-radius, 12px)
+            var(--ha-border-radius-square) var(--ha-border-radius-square)
+              var(--ha-card-border-radius, var(--ha-border-radius-lg))
+              var(--ha-card-border-radius, var(--ha-border-radius-lg))
           );
           border: 1px solid var(--divider-color);
           padding: 5px 16px;

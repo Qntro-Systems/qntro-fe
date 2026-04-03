@@ -10,20 +10,24 @@ import {
   number,
   object,
   optional,
-  refine,
   string,
 } from "superstruct";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import "../../../../components/ha-form/ha-form";
 import type { SchemaUnion } from "../../../../components/ha-form/types";
+import { NON_NUMERIC_ATTRIBUTES } from "../../../../data/entity/entity_attributes";
 import type { HomeAssistant } from "../../../../types";
 import { DEFAULT_MAX, DEFAULT_MIN } from "../../cards/hui-gauge-card";
 import type { GaugeCardConfig } from "../../cards/types";
-import type { UiAction } from "../../components/hui-action-editor";
+import {
+  ACTION_RELATED_CONTEXT,
+  type UiAction,
+  supportedActions,
+} from "../../components/hui-action-editor";
 import type { LovelaceCardEditor } from "../../types";
 import { actionConfigStruct } from "../structs/action-struct";
 import { baseLovelaceCardConfig } from "../structs/base-card-struct";
-import { NON_NUMERIC_ATTRIBUTES } from "../../../../data/entity_attributes";
+import { entityNameStruct } from "../structs/entity-name-struct";
 
 const TAP_ACTIONS: UiAction[] = [
   "more-info",
@@ -43,7 +47,7 @@ const gaugeSegmentStruct = object({
 const cardConfigStruct = assign(
   baseLovelaceCardConfig,
   object({
-    name: optional(string()),
+    name: optional(entityNameStruct),
     entity: optional(string()),
     attribute: optional(string()),
     unit: optional(string()),
@@ -53,13 +57,11 @@ const cardConfigStruct = assign(
     theme: optional(string()),
     needle: optional(boolean()),
     segments: optional(array(gaugeSegmentStruct)),
-    tap_action: optional(
-      refine(actionConfigStruct, TAP_ACTIONS.toString(), (value) =>
-        TAP_ACTIONS.includes(value.action)
-      )
+    tap_action: optional(supportedActions(actionConfigStruct, TAP_ACTIONS)),
+    hold_action: optional(supportedActions(actionConfigStruct, TAP_ACTIONS)),
+    double_tap_action: optional(
+      supportedActions(actionConfigStruct, TAP_ACTIONS)
     ),
-    hold_action: optional(actionConfigStruct),
-    double_tap_action: optional(actionConfigStruct),
   })
 );
 
@@ -98,13 +100,13 @@ export class HuiGaugeCardEditor
           },
         },
         {
-          name: "",
-          type: "grid",
-          schema: [
-            { name: "name", selector: { text: {} } },
-            { name: "unit", selector: { text: {} } },
-          ],
+          name: "name",
+          selector: {
+            entity_name: {},
+          },
+          context: { entity: "entity" },
         },
+        { name: "unit", selector: { text: {} } },
         { name: "theme", selector: { theme: {} } },
         {
           name: "",
@@ -166,6 +168,7 @@ export class HuiGaugeCardEditor
                   default_action: "more-info",
                 },
               },
+              context: ACTION_RELATED_CONTEXT,
             },
             {
               name: "",
@@ -180,6 +183,7 @@ export class HuiGaugeCardEditor
                       default_action: "none" as const,
                     },
                   },
+                  context: ACTION_RELATED_CONTEXT,
                 })
               ),
             },

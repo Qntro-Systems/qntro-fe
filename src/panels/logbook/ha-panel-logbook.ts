@@ -1,9 +1,11 @@
 import { mdiRefresh } from "@mdi/js";
+import type { HassServiceTarget } from "home-assistant-js-websocket";
 import type { PropertyValues } from "lit";
 import { css, html, LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import type { HassServiceTarget } from "home-assistant-js-websocket";
 import memoizeOne from "memoize-one";
+import { ensureArray } from "../../common/array/ensure-array";
+import { storage } from "../../common/decorators/storage";
 import { goBack, navigate } from "../../common/navigate";
 import { constructUrlCurrentPath } from "../../common/url/construct-url";
 import {
@@ -12,21 +14,19 @@ import {
   removeSearchParam,
 } from "../../common/url/search-params";
 import "../../components/entity/ha-entity-picker";
-import "../../components/ha-date-range-picker";
+import "../../components/date-picker/ha-date-range-picker";
 import "../../components/ha-icon-button";
 import "../../components/ha-icon-button-arrow-prev";
 import "../../components/ha-menu-button";
-import "../../components/ha-top-app-bar-fixed";
 import "../../components/ha-target-picker";
+import "../../components/ha-top-app-bar-fixed";
+import type { HaEntityPickerEntityFilterFunc } from "../../data/entity/entity";
 import { filterLogbookCompatibleEntities } from "../../data/logbook";
+import { resolveEntityIDs } from "../../data/selector";
+import { getSensorNumericDeviceClasses } from "../../data/sensor";
 import { haStyle } from "../../resources/styles";
 import type { HomeAssistant } from "../../types";
 import "./ha-logbook";
-import { storage } from "../../common/decorators/storage";
-import { ensureArray } from "../../common/array/ensure-array";
-import { resolveEntityIDs } from "../../data/selector";
-import { getSensorNumericDeviceClasses } from "../../data/sensor";
-import type { HaEntityPickerEntityFilterFunc } from "../../components/entity/ha-entity-picker";
 
 @customElement("ha-panel-logbook")
 export class HaPanelLogbook extends LitElement {
@@ -95,7 +95,6 @@ export class HaPanelLogbook extends LitElement {
         <div class="content">
           <div class="filters">
             <ha-date-range-picker
-              .hass=${this.hass}
               .startDate=${this._time.range[0]}
               .endDate=${this._time.range[1]}
               @value-changed=${this._dateRangeChanged}
@@ -108,6 +107,7 @@ export class HaPanelLogbook extends LitElement {
               .value=${this._targetPickerValue}
               add-on-top
               @value-changed=${this._targetsChanged}
+              compact
             ></ha-target-picker>
           </div>
 
@@ -302,6 +302,9 @@ export class HaPanelLogbook extends LitElement {
     return [
       haStyle,
       css`
+        :host {
+          --ha-generic-picker-max-width: 400px;
+        }
         ha-logbook {
           height: calc(
             100vh -
@@ -345,7 +348,7 @@ export class HaPanelLogbook extends LitElement {
         }
 
         .content {
-          overflow: hidden;
+          overflow-x: hidden;
         }
 
         .filters {
@@ -361,6 +364,10 @@ export class HaPanelLogbook extends LitElement {
           display: inline-block;
           flex-grow: 1;
           max-width: 400px;
+        }
+
+        ha-target-picker {
+          flex: 1;
         }
 
         :host([narrow]) ha-entity-picker {

@@ -6,7 +6,6 @@ import { customElement, property, state } from "lit/decorators";
 import { styleMap } from "lit/directives/style-map";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
 import { fireEvent } from "../../../common/dom/fire_event";
-import { computeStateName } from "../../../common/entity/compute_state_name";
 import { stateColorCss } from "../../../common/entity/state_color";
 import "../../../components/ha-card";
 import "../../../components/ha-icon-button";
@@ -133,7 +132,7 @@ export class HuiHumidifierCard extends LitElement implements LovelaceCard {
       `;
     }
 
-    const name = this._config!.name || computeStateName(stateObj);
+    const name = this.hass.formatEntityName(stateObj, this._config.name);
 
     const color = stateColorCss(stateObj);
 
@@ -256,7 +255,7 @@ export class HuiHumidifierCard extends LitElement implements LovelaceCard {
       right: 0;
       inset-inline-end: 0px;
       inset-inline-start: initial;
-      border-radius: 100%;
+      border-radius: var(--ha-border-radius-pill);
       color: var(--secondary-text-color);
       direction: var(--direction);
     }

@@ -37,21 +37,11 @@ declare global {
     "hass-language-select": {
       language: string;
     };
-    "hass-number-format-select": {
-      number_format: NumberFormat;
-    };
-    "hass-time-format-select": {
-      time_format: TimeFormat;
-    };
-    "hass-date-format-select": {
-      date_format: DateFormat;
-    };
-    "hass-time-zone-select": {
-      time_zone: TimeZone;
-    };
-    "hass-first-weekday-select": {
-      first_weekday: FirstWeekday;
-    };
+    "hass-number-format-select": NumberFormat;
+    "hass-time-format-select": TimeFormat;
+    "hass-date-format-select": DateFormat;
+    "hass-time-zone-select": TimeZone;
+    "hass-first-weekday-select": FirstWeekday;
     "translations-updated": undefined;
   }
 }
@@ -77,6 +67,11 @@ export default <T extends Constructor<HassBaseEl>>(superClass: T) =>
     private __coreProgress?: string;
 
     private __loadedFragmentTranslations = new Set<string>();
+
+    private __inflightFragmentTranslations = new Map<
+      string,
+      Promise<LocalizeFunc>
+    >();
 
     private __loadedTranslations: Record<string, LoadedTranslationCategory> =
       {};
@@ -268,6 +263,7 @@ export default <T extends Constructor<HassBaseEl>>(superClass: T) =>
       this._applyDirection(hass);
       this._loadCoreTranslations(hass.language);
       this.__loadedFragmentTranslations = new Set();
+      this.__inflightFragmentTranslations = new Map();
       this._loadFragmentTranslations(hass.language, hass.panelUrl);
     }
 
@@ -390,12 +386,20 @@ export default <T extends Constructor<HassBaseEl>>(superClass: T) =>
         return undefined;
       }
 
+      if (this.__inflightFragmentTranslations.has(fragment)) {
+        return this.__inflightFragmentTranslations.get(fragment)!;
+      }
       if (this.__loadedFragmentTranslations.has(fragment)) {
         return this.hass!.localize;
       }
-      this.__loadedFragmentTranslations.add(fragment);
-      const result = await getTranslation(fragment, language);
-      return this._updateResources(language, result.data);
+      const promise = getTranslation(fragment, language).then((result) =>
+        this._updateResources(language, result.data).finally(() => {
+          this.__inflightFragmentTranslations.delete(fragment);
+          this.__loadedFragmentTranslations.add(fragment);
+        })
+      );
+      this.__inflightFragmentTranslations.set(fragment, promise);
+      return promise;
     }
 
     private async _loadCoreTranslations(language: string) {

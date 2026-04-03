@@ -1,8 +1,8 @@
 import type { UnsubscribeFunc } from "home-assistant-js-websocket";
+import { isComponentLoaded } from "../common/config/is_component_loaded";
 import { navigate } from "../common/navigate";
 import type { HomeAssistant } from "../types";
-import { subscribeDeviceRegistry } from "./device_registry";
-import { isComponentLoaded } from "../common/config/is_component_loaded";
+import { subscribeDeviceRegistry } from "./device/device_registry";
 import { getThreadDataSetTLV, listThreadDataSets } from "./thread";
 
 export enum NetworkType {
@@ -52,7 +52,7 @@ export const canCommissionMatterExternal = (hass: HomeAssistant) =>
   hass.auth.external?.config.canCommissionMatter;
 
 export const startExternalCommissioning = async (hass: HomeAssistant) => {
-  if (isComponentLoaded(hass, "thread")) {
+  if (isComponentLoaded(hass.config, "thread")) {
     const datasets = await listThreadDataSets(hass);
     const preferredDataset = datasets.datasets.find(
       (dataset) => dataset.preferred

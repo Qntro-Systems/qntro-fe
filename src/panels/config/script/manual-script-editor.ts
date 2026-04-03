@@ -1,15 +1,8 @@
-import { mdiContentSave, mdiHelpCircle } from "@mdi/js";
+import { mdiHelpCircleOutline } from "@mdi/js";
 import { load } from "js-yaml";
 import type { CSSResultGroup, PropertyValues } from "lit";
 import { css, html, LitElement, nothing } from "lit";
-import {
-  customElement,
-  property,
-  query,
-  queryAll,
-  state,
-} from "lit/decorators";
-import { classMap } from "lit/directives/class-map";
+import { customElement, query, queryAll } from "lit/decorators";
 import {
   any,
   array,
@@ -23,30 +16,24 @@ import {
 import { ensureArray } from "../../../common/array/ensure-array";
 import { canOverrideAlphanumericInput } from "../../../common/dom/can-override-input";
 import { fireEvent } from "../../../common/dom/fire_event";
-import { constructUrlCurrentPath } from "../../../common/url/construct-url";
-import {
-  extractSearchParam,
-  removeSearchParam,
-} from "../../../common/url/search-params";
 import "../../../components/ha-icon-button";
 import "../../../components/ha-markdown";
 import type {
-  ActionSidebarConfig,
-  SidebarConfig,
-} from "../../../data/automation";
-import type { Action, Fields, ScriptConfig } from "../../../data/script";
+  Action,
+  Fields,
+  ManualScriptConfig,
+  ScriptConfig,
+} from "../../../data/script";
 import {
   getActionType,
   MODES,
   normalizeScriptConfig,
 } from "../../../data/script";
-import type { HomeAssistant } from "../../../types";
 import { documentationUrl } from "../../../util/documentation-url";
 import { showToast } from "../../../util/toast";
 import "../automation/action/ha-automation-action";
 import type HaAutomationAction from "../automation/action/ha-automation-action";
-import "../automation/ha-automation-sidebar";
-import type HaAutomationSidebar from "../automation/ha-automation-sidebar";
+import { ManualEditorMixin } from "../automation/ha-manual-editor-mixin";
 import { showPasteReplaceDialog } from "../automation/paste-replace-dialog/show-dialog-paste-replace";
 import { manualEditorStyles, saveFabStyles } from "../automation/styles";
 import "./ha-script-fields";
@@ -63,38 +50,16 @@ const scriptConfigStruct = object({
 });
 
 @customElement("manual-script-editor")
-export class HaManualScriptEditor extends LitElement {
-  @property({ attribute: false }) public hass!: HomeAssistant;
-
-  @property({ attribute: "is-wide", type: Boolean }) public isWide = false;
-
-  @property({ type: Boolean }) public narrow = false;
-
-  @property({ type: Boolean }) public disabled = false;
-
-  @property({ type: Boolean }) public saving = false;
-
-  @property({ attribute: false }) public config!: ScriptConfig;
-
-  @property({ attribute: false }) public dirty = false;
-
-  @state() private _pastedConfig?: ScriptConfig;
-
-  @state() private _sidebarConfig?: SidebarConfig;
-
-  @state() private _sidebarKey?: string;
-
+export class HaManualScriptEditor extends ManualEditorMixin<ScriptConfig>(
+  LitElement
+) {
   @query("ha-script-fields")
   private _scriptFields?: HaScriptFields;
 
-  @query("ha-automation-sidebar") private _sidebarElement?: HaAutomationSidebar;
-
   @queryAll("ha-automation-action, ha-script-fields")
-  private _collapsableElements?: NodeListOf<
+  protected collapsableElements?: NodeListOf<
     HaAutomationAction | HaScriptFields
   >;
-
-  private _previousConfig?: ScriptConfig;
 
   private _openFields = false;
 
@@ -115,7 +80,8 @@ export class HaManualScriptEditor extends LitElement {
     });
   }
 
-  protected updated(changedProps) {
+  protected updated(changedProps: PropertyValues) {
+    super.updated(changedProps);
     if (this._openFields && changedProps.has("config")) {
       this._openFields = false;
       this._scriptFields?.updateComplete.then(() =>
@@ -124,7 +90,7 @@ export class HaManualScriptEditor extends LitElement {
     }
   }
 
-  private _renderContent() {
+  protected renderContent() {
     return html`
       ${
         this.config.description
@@ -143,35 +109,32 @@ export class HaManualScriptEditor extends LitElement {
                   "ui.panel.config.script.editor.field.fields"
                 )}
               </h2>
-              <a
+              <ha-icon-button
+                .path=${mdiHelpCircleOutline}
+                .label=${this.hass.localize(
+                  "ui.panel.config.script.editor.field.link_help_fields"
+                )}
                 href=${documentationUrl(
                   this.hass,
                   "/integrations/script/#fields"
                 )}
                 target="_blank"
                 rel="noreferrer"
-              >
-                <ha-icon-button
-                  .path=${mdiHelpCircle}
-                  .label=${this.hass.localize(
-                    "ui.panel.config.script.editor.field.link_help_fields"
-                  )}
-                ></ha-icon-button>
-              </a>
+              ></ha-icon-button>
             </div>
 
             <ha-script-fields
               role="region"
               aria-labelledby="fields-heading"
               .fields=${this.config.fields}
-              .highlightedFields=${this._pastedConfig?.fields}
+              .highlightedFields=${this.pastedConfig?.fields}
               @value-changed=${this._fieldsChanged}
               .hass=${this.hass}
               .disabled=${this.disabled}
               .narrow=${this.narrow}
-              @open-sidebar=${this._openSidebar}
-              @request-close-sidebar=${this._triggerCloseSidebar}
-              @close-sidebar=${this._handleCloseSidebar}
+              @open-sidebar=${this.openSidebar}
+              @request-close-sidebar=${this.triggerCloseSidebar}
+              @close-sidebar=${this.handleCloseSidebar}
             ></ha-script-fields>`
         : nothing
     }
@@ -180,29 +143,17 @@ export class HaManualScriptEditor extends LitElement {
       <h2 id="sequence-heading" class="name">
         ${this.hass.localize("ui.panel.config.script.editor.sequence")}
       </h2>
-      <a
-        href=${documentationUrl(this.hass, "/docs/scripts/")}
-        target="_blank"
-        rel="noreferrer"
-      >
-        <ha-icon-button
-          .path=${mdiHelpCircle}
-          .label=${this.hass.localize(
-            "ui.panel.config.script.editor.link_available_actions"
-          )}
-        ></ha-icon-button>
-      </a>
     </div>
 
     <ha-automation-action
       role="region"
       aria-labelledby="sequence-heading"
       .actions=${this.config.sequence || []}
-      .highlightedActions=${this._pastedConfig?.sequence || []}
+      .highlightedActions=${this.pastedConfig?.sequence}
       @value-changed=${this._sequenceChanged}
-      @open-sidebar=${this._openSidebar}
-      @request-close-sidebar=${this._triggerCloseSidebar}
-      @close-sidebar=${this._handleCloseSidebar}
+      @open-sidebar=${this.openSidebar}
+      @request-close-sidebar=${this.triggerCloseSidebar}
+      @close-sidebar=${this.handleCloseSidebar}
       .hass=${this.hass}
       .narrow=${this.narrow}
       .disabled=${this.disabled || this.saving}
@@ -212,69 +163,8 @@ export class HaManualScriptEditor extends LitElement {
   </div>`;
   }
 
-  protected render() {
-    return html`
-      <div
-        class=${classMap({
-          "has-sidebar": this._sidebarConfig && !this.narrow,
-        })}
-      >
-        <div class="content-wrapper">
-          <div
-            class="content ${this._sidebarConfig && this.narrow
-              ? "has-bottom-sheet"
-              : ""}"
-          >
-            <slot name="alerts"></slot>
-            ${this._renderContent()}
-          </div>
-          <div class="fab-positioner">
-            <div class="fab-positioner">
-              <ha-fab
-                slot="fab"
-                class=${this.dirty ? "dirty" : ""}
-                .label=${this.hass.localize("ui.common.save")}
-                .disabled=${this.saving}
-                extended
-                @click=${this._saveScript}
-              >
-                <ha-svg-icon slot="icon" .path=${mdiContentSave}></ha-svg-icon>
-              </ha-fab>
-            </div>
-          </div>
-        </div>
-        <div class="sidebar-positioner">
-          <ha-automation-sidebar
-            .sidebarKey=${this._sidebarKey}
-            tabindex="-1"
-            class=${classMap({ hidden: !this._sidebarConfig })}
-            .narrow=${this.narrow}
-            .isWide=${this.isWide}
-            .hass=${this.hass}
-            .config=${this._sidebarConfig}
-            @value-changed=${this._sidebarConfigChanged}
-            .disabled=${this.disabled}
-          ></ha-automation-sidebar>
-        </div>
-      </div>
-    `;
-  }
-
-  protected firstUpdated(changedProps: PropertyValues): void {
-    super.firstUpdated(changedProps);
-    const expanded = extractSearchParam("expanded");
-    if (expanded === "1") {
-      this._clearParam("expanded");
-      this.expandAll();
-    }
-  }
-
-  private _clearParam(param: string) {
-    window.history.replaceState(
-      null,
-      "",
-      constructUrlCurrentPath(removeSearchParam(param))
-    );
+  protected saveConfig() {
+    fireEvent(this, "save-script");
   }
 
   private _fieldsChanged(ev: CustomEvent): void {
@@ -293,17 +183,7 @@ export class HaManualScriptEditor extends LitElement {
     });
   }
 
-  public connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("paste", this._handlePaste);
-  }
-
-  public disconnectedCallback() {
-    window.removeEventListener("paste", this._handlePaste);
-    super.disconnectedCallback();
-  }
-
-  private _handlePaste = async (ev: ClipboardEvent) => {
+  protected handlePaste = async (ev: ClipboardEvent) => {
     // Ignore events on inputs/textareas
     if (!canOverrideAlphanumericInput(ev.composedPath())) {
       return;
@@ -349,7 +229,11 @@ export class HaManualScriptEditor extends LitElement {
       }
     }
 
-    if (!["sequence", "unknown"].includes(getActionType(config))) {
+    const actionType = getActionType(config);
+    if (
+      !["sequence", "unknown"].includes(actionType) ||
+      (actionType === "sequence" && "metadata" in config)
+    ) {
       config = { sequence: [config] };
     }
 
@@ -377,6 +261,18 @@ export class HaManualScriptEditor extends LitElement {
     if (normalized) {
       ev.preventDefault();
 
+      const keysPresent = Object.keys(normalized).filter(
+        (key) => ensureArray(normalized[key]).length
+      );
+
+      if (keysPresent.length === 1 && ["sequence"].includes(keysPresent[0])) {
+        // if only one type of element is pasted, insert under the currently active item
+        if (this.tryInsertAfterSelected(normalized[keysPresent[0]])) {
+          this.showPastedToastWithUndo();
+          return;
+        }
+      }
+
       if (
         this.dirty ||
         ensureArray(this.config.sequence)?.length ||
@@ -401,56 +297,42 @@ export class HaManualScriptEditor extends LitElement {
       }
 
       // replace the config completely
-      this._replaceExistingConfig(normalized);
+      this.replaceExistingConfig(normalized);
     }
   };
 
   private _appendToExistingConfig(config: ScriptConfig) {
-    // make a copy otherwise we will reference the original config
-    this._previousConfig = { ...this.config } as ScriptConfig;
-    this._pastedConfig = config;
+    this.pastedConfig = config;
+    // make a copy otherwise we will modify the original config
+    // which breaks the (referenced) config used for storing in undo stack
+    const workingCopy: ManualScriptConfig = { ...this.config };
 
-    if (!this.config) {
+    if (!workingCopy) {
       return;
     }
 
     if ("fields" in config) {
-      this.config.fields = {
-        ...this.config.fields,
+      workingCopy.fields = {
+        ...workingCopy.fields,
         ...config.fields,
       };
     }
     if ("sequence" in config) {
-      this.config.sequence = ensureArray(this.config.sequence || []).concat(
+      workingCopy.sequence = ensureArray(workingCopy.sequence || []).concat(
         ensureArray(config.sequence)
       ) as Action[];
     }
 
-    this._showPastedToastWithUndo();
+    this.showPastedToastWithUndo();
 
     fireEvent(this, "value-changed", {
       value: {
-        ...this.config,
+        ...workingCopy,
       },
     });
   }
 
-  private _replaceExistingConfig(config: ScriptConfig) {
-    // make a copy otherwise we will reference the original config
-    this._previousConfig = { ...this.config } as ScriptConfig;
-    this._pastedConfig = config;
-    this.config = config;
-
-    this._showPastedToastWithUndo();
-
-    fireEvent(this, "value-changed", {
-      value: {
-        ...this.config,
-      },
-    });
-  }
-
-  private _showPastedToastWithUndo() {
+  protected showPastedToastWithUndo() {
     showToast(this, {
       message: this.hass.localize(
         "ui.panel.config.script.editor.paste_toast_message"
@@ -459,102 +341,12 @@ export class HaManualScriptEditor extends LitElement {
       action: {
         text: this.hass.localize("ui.common.undo"),
         action: () => {
-          fireEvent(this, "value-changed", {
-            value: {
-              ...this._previousConfig!,
-            },
-          });
+          fireEvent(this, "undo-change");
 
-          this._previousConfig = undefined;
-          this._pastedConfig = undefined;
+          this.pastedConfig = undefined;
         },
       },
     });
-  }
-
-  public resetPastedConfig() {
-    if (!this._previousConfig) {
-      return;
-    }
-
-    this._pastedConfig = undefined;
-    this._previousConfig = undefined;
-
-    showToast(this, {
-      message: "",
-      duration: 0,
-    });
-  }
-
-  private async _openSidebar(ev: CustomEvent<SidebarConfig>) {
-    // deselect previous selected row
-    this._sidebarConfig?.close?.();
-    this._sidebarConfig = ev.detail;
-    this._sidebarKey = JSON.stringify(this._sidebarConfig);
-
-    await this._sidebarElement?.updateComplete;
-    this._sidebarElement?.focus();
-  }
-
-  private _sidebarConfigChanged(ev: CustomEvent<{ value: SidebarConfig }>) {
-    ev.stopPropagation();
-    if (!this._sidebarConfig) {
-      return;
-    }
-
-    this._sidebarConfig = {
-      ...this._sidebarConfig,
-      ...ev.detail.value,
-    };
-  }
-
-  private _triggerCloseSidebar() {
-    if (this._sidebarConfig) {
-      if (this._sidebarElement) {
-        this._sidebarElement.triggerCloseSidebar();
-        return;
-      }
-      this._sidebarConfig?.close();
-    }
-  }
-
-  private _handleCloseSidebar() {
-    this._sidebarConfig = undefined;
-  }
-
-  private _saveScript() {
-    this._triggerCloseSidebar();
-    fireEvent(this, "save-script");
-  }
-
-  public expandAll() {
-    this._collapsableElements?.forEach((element) => {
-      element.expandAll();
-    });
-  }
-
-  public collapseAll() {
-    this._collapsableElements?.forEach((element) => {
-      element.collapseAll();
-    });
-  }
-
-  public copySelectedRow() {
-    if ((this._sidebarConfig as ActionSidebarConfig)?.copy) {
-      (this._sidebarConfig as ActionSidebarConfig).copy();
-    }
-  }
-
-  public cutSelectedRow() {
-    if ((this._sidebarConfig as ActionSidebarConfig)?.cut) {
-      (this._sidebarConfig as ActionSidebarConfig).cut();
-    }
-  }
-
-  public deleteSelectedRow() {
-    if ((this._sidebarConfig as ActionSidebarConfig)?.delete) {
-      (this._sidebarConfig as ActionSidebarConfig).delete();
-    }
   }
 
   static get styles(): CSSResultGroup {
@@ -577,6 +369,10 @@ export class HaManualScriptEditor extends LitElement {
 
         .description {
           margin-top: 16px;
+        }
+
+        ha-icon-button {
+          color: var(--secondary-text-color);
         }
       `,
     ];

@@ -2,7 +2,7 @@ import type { HassEntity } from "home-assistant-js-websocket";
 import type {
   EntityRegistryDisplayEntry,
   EntityRegistryEntry,
-} from "../../data/entity_registry";
+} from "../../data/entity/entity_registry";
 import type { HomeAssistant } from "../../types";
 import { computeDeviceName } from "./compute_device_name";
 import { computeStateName } from "./compute_state_name";
@@ -61,3 +61,9 @@ export const computeEntityEntryName = (
 
   return name;
 };
+
+export const entityUseDeviceName = (
+  stateObj: HassEntity,
+  entities: HomeAssistant["entities"],
+  devices: HomeAssistant["devices"]
+): boolean => !computeEntityName(stateObj, entities, devices);

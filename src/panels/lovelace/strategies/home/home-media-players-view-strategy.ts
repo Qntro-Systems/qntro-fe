@@ -1,14 +1,17 @@
 import { ReactiveElement } from "lit";
 import { customElement } from "lit/decorators";
-import { generateEntityFilter } from "../../../../common/entity/entity_filter";
+import {
+  findEntities,
+  generateEntityFilter,
+} from "../../../../common/entity/entity_filter";
+import { floorDefaultIcon } from "../../../../components/ha-floor-icon";
 import type { LovelaceCardConfig } from "../../../../data/lovelace/config/card";
 import type { LovelaceSectionRawConfig } from "../../../../data/lovelace/config/section";
 import type { LovelaceViewConfig } from "../../../../data/lovelace/config/view";
 import type { HomeAssistant } from "../../../../types";
 import type { MediaControlCardConfig } from "../../cards/types";
-import { getAreas, getFloors } from "../areas/helpers/areas-strategy-helper";
-import { getHomeStructure } from "./helpers/home-structure";
-import { findEntities, HOME_SUMMARIES_FILTERS } from "./helpers/home-summaries";
+import { getAreasFloorHierarchy } from "../../../../common/areas/areas-floor-hierarchy";
+import { HOME_SUMMARIES_FILTERS } from "./helpers/home-summaries";
 
 export interface HomeMediaPlayersViewStrategyConfig {
   type: "home-media-players";
@@ -32,13 +35,13 @@ const processAreasForMediaPlayers = (
     const areaCards: LovelaceCardConfig[] = [];
 
     for (const entityId of areaEntities) {
-      cards.push({
+      areaCards.push({
         type: "media-control",
         entity: entityId,
       } satisfies MediaControlCardConfig);
     }
 
-    if (areaEntities.length > 0) {
+    if (areaCards.length > 0) {
       cards.push({
         heading_style: "subtitle",
         type: "heading",
@@ -55,15 +58,35 @@ const processAreasForMediaPlayers = (
   return cards;
 };
 
+const processUnassignedEntities = (
+  hass: HomeAssistant,
+  entities: string[]
+): LovelaceCardConfig[] => {
+  const unassignedFilter = generateEntityFilter(hass, {
+    area: null,
+  });
+  const unassignedEntities = entities.filter(unassignedFilter);
+  const areaCards: LovelaceCardConfig[] = [];
+
+  for (const entityId of unassignedEntities) {
+    areaCards.push({
+      type: "media-control",
+      entity: entityId,
+    } satisfies MediaControlCardConfig);
+  }
+
+  return areaCards;
+};
+
 @customElement("home-media-players-view-strategy")
 export class HomeMMediaPlayersViewStrategy extends ReactiveElement {
   static async generate(
     _config: HomeMediaPlayersViewStrategyConfig,
     hass: HomeAssistant
   ): Promise<LovelaceViewConfig> {
-    const areas = getAreas(hass.areas);
-    const floors = getFloors(hass.floors);
-    const home = getHomeStructure(floors, areas);
+    const areas = Object.values(hass.areas);
+    const floors = Object.values(hass.floors);
+    const home = getAreasFloorHierarchy(floors, areas);
 
     const sections: LovelaceSectionRawConfig[] = [];
 
@@ -93,6 +116,7 @@ export class HomeMMediaPlayersViewStrategy extends ReactiveElement {
               floorCount > 1
                 ? floor.name
                 : hass.localize("ui.panel.lovelace.strategy.home.areas"),
+            icon: floor.icon || floorDefaultIcon(floor),
           },
         ],
       };
@@ -129,10 +153,35 @@ export class HomeMMediaPlayersViewStrategy extends ReactiveElement {
       }
     }
 
+    // Process unassigned entities
+    const unassignedCards = processUnassignedEntities(hass, entities);
+
+    if (unassignedCards.length > 0) {
+      const section: LovelaceSectionRawConfig = {
+        type: "grid",
+        column_span: 2,
+        cards: [
+          {
+            type: "heading",
+            heading:
+              sections.length > 0
+                ? hass.localize(
+                    "ui.panel.lovelace.strategy.home_media_players.other_media_players"
+                  )
+                : hass.localize(
+                    "ui.panel.lovelace.strategy.home_media_players.media_players"
+                  ),
+          },
+          ...unassignedCards,
+        ],
+      };
+      sections.push(section);
+    }
+
     return {
       type: "sections",
       max_columns: 2,
-      sections: sections || [],
+      sections: sections,
     };
   }
 }

@@ -1,4 +1,4 @@
-import { mdiDrag, mdiTextureBox } from "@mdi/js";
+import { mdiDragHorizontalVariant, mdiTextureBox } from "@mdi/js";
 import type { TemplateResult } from "lit";
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
@@ -7,16 +7,14 @@ import memoizeOne from "memoize-one";
 import { fireEvent } from "../common/dom/fire_event";
 import { computeFloorName } from "../common/entity/compute_floor_name";
 import { getAreaContext } from "../common/entity/context/get_area_context";
-import { areaCompare } from "../data/area_registry";
 import type { FloorRegistryEntry } from "../data/floor_registry";
 import { getFloors } from "../panels/lovelace/strategies/areas/helpers/areas-strategy-helper";
-import type { HomeAssistant } from "../types";
+import type { HomeAssistant, ValueChangedEvent } from "../types";
 import "./ha-expansion-panel";
 import "./ha-floor-icon";
 import "./ha-items-display-editor";
 import type { DisplayItem, DisplayValue } from "./ha-items-display-editor";
 import "./ha-svg-icon";
-import "./ha-textfield";
 
 export interface AreasFloorsDisplayValue {
   areas_display?: {
@@ -105,7 +103,7 @@ export class HaAreasFloorsDisplayEditor extends LitElement {
                       <ha-svg-icon
                         class="handle"
                         slot="icons"
-                        .path=${mdiDrag}
+                        .path=${mdiDragHorizontalVariant}
                       ></ha-svg-icon>
                     `}
                 <ha-items-display-editor
@@ -131,14 +129,11 @@ export class HaAreasFloorsDisplayEditor extends LitElement {
       // update items if floors change
       _hassFloors: HomeAssistant["floors"]
     ): Record<string, DisplayItem[]> => {
-      const compare = areaCompare(hassAreas);
+      const areas = Object.values(hassAreas);
 
-      const areas = Object.values(hassAreas).sort((areaA, areaB) =>
-        compare(areaA.area_id, areaB.area_id)
-      );
       const groupedItems: Record<string, DisplayItem[]> = areas.reduce(
         (acc, area) => {
-          const { floor } = getAreaContext(area, this.hass!);
+          const { floor } = getAreaContext(area, this.hass.floors);
           const floorId = floor?.floor_id ?? UNASSIGNED_FLOOR;
 
           if (!acc[floorId]) {
@@ -204,7 +199,7 @@ export class HaAreasFloorsDisplayEditor extends LitElement {
     fireEvent(this, "value-changed", { value: newValue });
   }
 
-  private async _areaDisplayChanged(ev: CustomEvent<{ value: DisplayValue }>) {
+  private async _areaDisplayChanged(ev: ValueChangedEvent<DisplayValue>) {
     ev.stopPropagation();
     const value = ev.detail.value;
     const currentFloorId = (ev.currentTarget as any).floorId;

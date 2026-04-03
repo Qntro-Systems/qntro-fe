@@ -16,17 +16,27 @@ import {
   formatListWithAnds,
   formatListWithOrs,
 } from "../common/string/format-list";
+import { hasTemplate } from "../common/string/has-template";
 import type { HomeAssistant } from "../types";
-import type { Condition, ForDict, Trigger } from "./automation";
-import type { DeviceCondition, DeviceTrigger } from "./device_automation";
+import type {
+  Condition,
+  ForDict,
+  LegacyCondition,
+  LegacyTrigger,
+  Trigger,
+} from "./automation";
+import { getConditionDomain, getConditionObjectId } from "./condition";
+import type {
+  DeviceCondition,
+  DeviceTrigger,
+} from "./device/device_automation";
 import {
   localizeDeviceAutomationCondition,
   localizeDeviceAutomationTrigger,
-} from "./device_automation";
-import type { EntityRegistryEntry } from "./entity_registry";
+} from "./device/device_automation";
+import type { EntityRegistryEntry } from "./entity/entity_registry";
 import type { FrontendLocaleData } from "./translation";
-import { isTriggerList } from "./trigger";
-import { hasTemplate } from "../common/string/has-template";
+import { getTriggerDomain, getTriggerObjectId, isTriggerList } from "./trigger";
 
 const triggerTranslationBaseKey =
   "ui.panel.config.automation.editor.triggers.type";
@@ -66,6 +76,19 @@ const localizeTimeString = (
   } catch {
     return time;
   }
+};
+
+const formatNumericLimitValue = (
+  hass: HomeAssistant,
+  value?: number | string
+) => {
+  if (typeof value !== "string" || !isValidEntityId(value)) {
+    return value;
+  }
+
+  return hass.states[value]
+    ? computeStateName(hass.states[value]) || value
+    : value;
 };
 
 export const describeTrigger = (
@@ -121,6 +144,35 @@ const tryDescribeTrigger = (
     return trigger.alias;
   }
 
+  const description = describeLegacyTrigger(
+    trigger as LegacyTrigger,
+    hass,
+    entityRegistry
+  );
+
+  if (description) {
+    return description;
+  }
+
+  const triggerType = trigger.trigger;
+
+  const domain = getTriggerDomain(trigger.trigger);
+  const type = getTriggerObjectId(trigger.trigger);
+
+  return (
+    hass.localize(`component.${domain}.triggers.${type}.name`) ||
+    hass.localize(
+      `ui.panel.config.automation.editor.triggers.type.${triggerType as LegacyTrigger["trigger"]}.label`
+    ) ||
+    hass.localize(`ui.panel.config.automation.editor.triggers.unknown_trigger`)
+  );
+};
+
+const describeLegacyTrigger = (
+  trigger: LegacyTrigger,
+  hass: HomeAssistant,
+  entityRegistry: EntityRegistryEntry[]
+) => {
   // Event Trigger
   if (trigger.trigger === "event" && trigger.event_type) {
     const eventTypes: string[] = [];
@@ -194,8 +246,8 @@ const tryDescribeTrigger = (
           attribute: attribute,
           entity: formatListWithOrs(hass.locale, entities),
           numberOfEntities: entities.length,
-          above: trigger.above,
-          below: trigger.below,
+          above: formatNumericLimitValue(hass, trigger.above),
+          below: formatNumericLimitValue(hass, trigger.below),
           duration: duration,
         }
       );
@@ -207,7 +259,7 @@ const tryDescribeTrigger = (
           attribute: attribute,
           entity: formatListWithOrs(hass.locale, entities),
           numberOfEntities: entities.length,
-          above: trigger.above,
+          above: formatNumericLimitValue(hass, trigger.above),
           duration: duration,
         }
       );
@@ -219,7 +271,7 @@ const tryDescribeTrigger = (
           attribute: attribute,
           entity: formatListWithOrs(hass.locale, entities),
           numberOfEntities: entities.length,
-          below: trigger.below,
+          below: formatNumericLimitValue(hass, trigger.below),
           duration: duration,
         }
       );
@@ -774,16 +826,16 @@ const tryDescribeTrigger = (
       : trigger.entity_id;
 
     let offsetChoice = "other";
-    let offset: string | string[] = "";
+    let offset = "";
     if (trigger.offset) {
       offsetChoice = trigger.offset.startsWith("-") ? "before" : "after";
-      offset = trigger.offset.startsWith("-")
+      const parts = trigger.offset.startsWith("-")
         ? trigger.offset.substring(1).split(":")
         : trigger.offset.split(":");
       const duration = {
-        hours: offset.length > 0 ? +offset[0] : 0,
-        minutes: offset.length > 1 ? +offset[1] : 0,
-        seconds: offset.length > 2 ? +offset[2] : 0,
+        hours: parts.length > 0 ? +parts[0] : 0,
+        minutes: parts.length > 1 ? +parts[1] : 0,
+        seconds: parts.length > 2 ? +parts[2] : 0,
       };
       offset = formatDurationLong(hass.locale, duration);
       if (offset === "") {
@@ -802,13 +854,7 @@ const tryDescribeTrigger = (
       }
     );
   }
-
-  return (
-    hass.localize(
-      `ui.panel.config.automation.editor.triggers.type.${trigger.trigger}.label`
-    ) ||
-    hass.localize(`ui.panel.config.automation.editor.triggers.unknown_trigger`)
-  );
+  return undefined;
 };
 
 export const describeCondition = (
@@ -871,6 +917,37 @@ const tryDescribeCondition = (
     }
   }
 
+  const description = describeLegacyCondition(
+    condition as LegacyCondition,
+    hass,
+    entityRegistry
+  );
+
+  if (description) {
+    return description;
+  }
+
+  const conditionType = condition.condition;
+
+  const domain = getConditionDomain(condition.condition);
+  const type = getConditionObjectId(condition.condition);
+
+  return (
+    hass.localize(`component.${domain}.conditions.${type}.name`) ||
+    hass.localize(
+      `ui.panel.config.automation.editor.conditions.type.${conditionType as LegacyCondition["condition"]}.label`
+    ) ||
+    hass.localize(
+      `ui.panel.config.automation.editor.conditions.unknown_condition`
+    )
+  );
+};
+
+const describeLegacyCondition = (
+  condition: LegacyCondition,
+  hass: HomeAssistant,
+  entityRegistry: EntityRegistryEntry[]
+) => {
   if (condition.condition === "or") {
     const conditions = ensureArray(condition.conditions);
 
@@ -1052,8 +1129,8 @@ const tryDescribeCondition = (
           attribute,
           entity,
           numberOfEntities: entity_ids.length,
-          above: condition.above,
-          below: condition.below,
+          above: formatNumericLimitValue(hass, condition.above),
+          below: formatNumericLimitValue(hass, condition.below),
         }
       );
     }
@@ -1064,7 +1141,7 @@ const tryDescribeCondition = (
           attribute,
           entity,
           numberOfEntities: entity_ids.length,
-          above: condition.above,
+          above: formatNumericLimitValue(hass, condition.above),
         }
       );
     }
@@ -1075,7 +1152,7 @@ const tryDescribeCondition = (
           attribute,
           entity,
           numberOfEntities: entity_ids.length,
-          below: condition.below,
+          below: formatNumericLimitValue(hass, condition.below),
         }
       );
     }
@@ -1262,12 +1339,5 @@ const tryDescribeCondition = (
     );
   }
 
-  return (
-    hass.localize(
-      `ui.panel.config.automation.editor.conditions.type.${condition.condition}.label`
-    ) ||
-    hass.localize(
-      `ui.panel.config.automation.editor.conditions.unknown_condition`
-    )
-  );
+  return undefined;
 };

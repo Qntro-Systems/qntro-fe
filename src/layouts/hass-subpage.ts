@@ -1,12 +1,13 @@
 import type { CSSResultGroup, TemplateResult } from "lit";
 import { css, html, LitElement } from "lit";
 import { customElement, eventOptions, property } from "lit/decorators";
+import { classMap } from "lit/directives/class-map";
 import { restoreScroll } from "../common/decorators/restore-scroll";
 import { goBack } from "../common/navigate";
 import "../components/ha-icon-button-arrow-prev";
 import "../components/ha-menu-button";
-import type { HomeAssistant } from "../types";
 import { haStyleScrollbar } from "../resources/styles";
+import type { HomeAssistant } from "../types";
 
 @customElement("hass-subpage")
 class HassSubpage extends LitElement {
@@ -22,30 +23,28 @@ class HassSubpage extends LitElement {
 
   @property({ type: Boolean, reflect: true }) public narrow = false;
 
-  @property({ type: Boolean }) public supervisor = false;
+  @property({ type: Boolean }) public scrollable = true;
 
   // @ts-ignore
   @restoreScroll(".content") private _savedScrollPos?: number;
 
   protected render(): TemplateResult {
     return html`
-      <div class="toolbar">
+      <div class="toolbar ${classMap({ narrow: this.narrow })}">
         <div class="toolbar-content">
           ${this.mainPage || history.state?.root
             ? html`
                 <ha-menu-button
-                  .hassio=${this.supervisor}
                   .hass=${this.hass}
                   .narrow=${this.narrow}
                 ></ha-menu-button>
               `
             : this.backPath
               ? html`
-                  <a href=${this.backPath}>
-                    <ha-icon-button-arrow-prev
-                      .hass=${this.hass}
-                    ></ha-icon-button-arrow-prev>
-                  </a>
+                  <ha-icon-button-arrow-prev
+                    href=${this.backPath}
+                    .hass=${this.hass}
+                  ></ha-icon-button-arrow-prev>
                 `
               : html`
                   <ha-icon-button-arrow-prev
@@ -60,7 +59,14 @@ class HassSubpage extends LitElement {
           <slot name="toolbar-icon"></slot>
         </div>
       </div>
-      <div class="content ha-scrollbar" @scroll=${this._saveScrollPos}>
+      <div
+        class=${classMap({
+          content: true,
+          "ha-scrollbar": this.scrollable,
+          "not-scrollable": !this.scrollable,
+        })}
+        @scroll=${this._saveScrollPos}
+      >
         <slot></slot>
       </div>
       <div id="fab">
@@ -128,12 +134,14 @@ class HassSubpage extends LitElement {
         ha-menu-button,
         ha-icon-button-arrow-prev,
         ::slotted([slot="toolbar-icon"]) {
+          display: flex;
+          align-items: center;
           pointer-events: auto;
           color: var(--sidebar-icon-color);
         }
 
         .main-title {
-          margin: var(--margin-title);
+          margin-inline-start: var(--ha-space-6);
           line-height: var(--ha-line-height-normal);
           min-width: 0;
           flex-grow: 1;
@@ -143,7 +151,9 @@ class HassSubpage extends LitElement {
           -webkit-box-orient: vertical;
           overflow: hidden;
           text-overflow: ellipsis;
-          padding-bottom: 1px;
+        }
+        .narrow .main-title {
+          margin-inline-start: var(--ha-space-2);
         }
 
         .content {
@@ -156,12 +166,18 @@ class HassSubpage extends LitElement {
                 0px
               ) - var(--safe-area-inset-bottom, 0px)
           );
-          margin-bottom: var(--safe-area-inset-bottom);
+          padding-bottom: var(--safe-area-inset-bottom, 0px);
           margin-right: var(--safe-area-inset-right);
           overflow-y: auto;
           overflow: auto;
           -webkit-overflow-scrolling: touch;
         }
+        .content.not-scrollable {
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
         :host([narrow]) .content {
           width: calc(
             100% - var(--safe-area-inset-left, 0px) - var(
@@ -182,7 +198,7 @@ class HassSubpage extends LitElement {
           display: flex;
           flex-wrap: wrap;
           justify-content: flex-end;
-          gap: 8px;
+          gap: var(--ha-space-2);
         }
         :host([narrow]) #fab.tabs {
           bottom: calc(84px + var(--safe-area-inset-bottom, 0px));

@@ -1,14 +1,15 @@
 import type { TemplateResult } from "lit";
 import { css, html, LitElement } from "lit";
 import { customElement, property, query, state } from "lit/decorators";
+import type { UnsubscribeFunc } from "home-assistant-js-websocket";
 import { extractSearchParam } from "../../../../common/url/search-params";
 import "../../../../components/ha-assist-pipeline-picker";
 import "../../../../components/ha-button";
 import "../../../../components/ha-checkbox";
 import type { HaCheckbox } from "../../../../components/ha-checkbox";
 import "../../../../components/ha-formfield";
-import "../../../../components/ha-textfield";
-import type { HaTextField } from "../../../../components/ha-textfield";
+import "../../../../components/input/ha-input";
+import type { HaInput } from "../../../../components/input/ha-input";
 import type {
   PipelineRun,
   PipelineRunOptions,
@@ -24,6 +25,8 @@ import type { HomeAssistant } from "../../../../types";
 import { AudioRecorder } from "../../../../util/audio-recorder";
 import { fileDownload } from "../../../../util/file_download";
 import "./assist-render-pipeline-run";
+import type { ChatLog } from "../../../../data/chat_log";
+import { subscribeChatLog } from "../../../../data/chat_log";
 
 @customElement("assist-pipeline-run-debug")
 export class AssistPipelineRunDebug extends LitElement {
@@ -37,7 +40,7 @@ export class AssistPipelineRunDebug extends LitElement {
   private _continueConversationCheckbox!: HaCheckbox;
 
   @query("#continue-conversation-text")
-  private _continueConversationTextField?: HaTextField;
+  private _continueConversationTextField?: HaInput;
 
   private _audioBuffer?: Int16Array[];
 
@@ -45,6 +48,13 @@ export class AssistPipelineRunDebug extends LitElement {
 
   @state() private _pipelineId?: string =
     extractSearchParam("pipeline") || undefined;
+
+  @state() private _chatLog?: ChatLog;
+
+  private _chatLogSubscription: {
+    conversationId: string;
+    unsub: Promise<UnsubscribeFunc>;
+  } | null = null;
 
   protected render(): TemplateResult {
     return html`
@@ -119,14 +129,14 @@ export class AssistPipelineRunDebug extends LitElement {
                 `
               : this._pipelineRuns[0].init_options!.start_stage === "intent"
                 ? html`
-                    <ha-textfield
+                    <ha-input
                       id="continue-conversation-text"
                       .label=${this.hass.localize(
                         "ui.panel.config.voice_assistants.debug.pipeline.response"
                       )}
                       .disabled=${!this._finished}
                       @keydown=${this._handleContinueKeyDown}
-                    ></ha-textfield>
+                    ></ha-input>
                     <ha-button
                       @click=${this._runTextPipeline}
                       .disabled=${!this._finished}
@@ -178,12 +188,21 @@ export class AssistPipelineRunDebug extends LitElement {
                   <assist-render-pipeline-run
                     .hass=${this.hass}
                     .pipelineRun=${run}
+                    .chatLog=${this._chatLog}
                   ></assist-render-pipeline-run>
                 `
           )}
         </div>
       </hass-subpage>
     `;
+  }
+
+  public disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._chatLogSubscription) {
+      this._chatLogSubscription.unsub.then((unsub) => unsub());
+      this._chatLogSubscription = null;
+    }
   }
 
   private get conversationId(): string | null {
@@ -198,7 +217,7 @@ export class AssistPipelineRunDebug extends LitElement {
     let text: string | null;
 
     if (textfield) {
-      text = textfield.value;
+      text = textfield.value ?? null;
     } else {
       text = await showPromptDialog(this, {
         title: this.hass.localize(
@@ -408,6 +427,32 @@ export class AssistPipelineRunDebug extends LitElement {
             added = true;
           }
           callback(updatedRun);
+
+          const conversationId = this.conversationId;
+          if (
+            !this._chatLog &&
+            conversationId &&
+            (!this._chatLogSubscription ||
+              this._chatLogSubscription.conversationId !== conversationId)
+          ) {
+            if (this._chatLogSubscription) {
+              this._chatLogSubscription.unsub.then((unsub) => unsub());
+            }
+            this._chatLogSubscription = {
+              conversationId,
+              unsub: subscribeChatLog(this.hass, conversationId, (chatLog) => {
+                if (chatLog) {
+                  this._chatLog = chatLog;
+                } else {
+                  this._chatLogSubscription?.unsub.then((unsub) => unsub());
+                  this._chatLogSubscription = null;
+                }
+              }),
+            };
+            this._chatLogSubscription.unsub.catch(() => {
+              this._chatLogSubscription = null;
+            });
+          }
         },
         {
           ...options,
@@ -470,7 +515,7 @@ export class AssistPipelineRunDebug extends LitElement {
       .start-buttons {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: var(--ha-space-2);
         align-items: center;
         justify-content: center;
       }
@@ -487,7 +532,7 @@ export class AssistPipelineRunDebug extends LitElement {
         width: 100%;
         margin-bottom: 16px;
       }
-      .start-row ha-textfield {
+      .start-row ha-input {
         flex: 1;
       }
       assist-render-pipeline-run {

@@ -1,7 +1,7 @@
 import { mdiCog, mdiDelete, mdiHarddisk, mdiNas } from "@mdi/js";
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
-import { join } from "lit/directives/join";
 import { customElement, property, state } from "lit/decorators";
+import { join } from "lit/directives/join";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../../../../common/dom/fire_event";
 import { computeDomain } from "../../../../../common/entity/compute_domain";
@@ -149,12 +149,14 @@ class HaBackupConfigAgents extends LitElement {
 
     return html`
       <img
-        .src=${brandsUrl({
-          domain,
-          type: "icon",
-          useFallback: true,
-          darkOptimized: this.hass.themes?.darkMode,
-        })}
+        .src=${brandsUrl(
+          {
+            domain,
+            type: "icon",
+            darkOptimized: this.hass.themes?.darkMode,
+          },
+          this.hass.auth.data.hassUrl
+        )}
         crossorigin="anonymous"
         referrerpolicy="no-referrer"
         alt=""
@@ -313,13 +315,13 @@ class HaBackupConfigAgents extends LitElement {
       display: flex;
       align-items: center;
       flex-direction: row;
-      gap: 8px;
+      gap: var(--ha-space-2);
       line-height: var(--ha-line-height-condensed);
     }
     .unencrypted-warning {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--ha-space-1);
     }
     .dot {
       display: block;
@@ -327,7 +329,7 @@ class HaBackupConfigAgents extends LitElement {
       width: 8px;
       height: 8px;
       background-color: var(--disabled-color);
-      border-radius: 50%;
+      border-radius: var(--ha-border-radius-circle);
     }
     .dot.warning {
       background-color: var(--warning-color);
@@ -341,7 +343,7 @@ class HaBackupConfigAgents extends LitElement {
         align-items: flex-start;
         flex-direction: column;
         justify-content: flex-start;
-        gap: 4px;
+        gap: var(--ha-space-1);
       }
     }
   `;

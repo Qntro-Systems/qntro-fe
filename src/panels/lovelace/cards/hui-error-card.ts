@@ -33,7 +33,6 @@ export class HuiErrorCard extends LitElement implements LovelaceCard {
       rows: this.preview ? "auto" : 1,
       min_rows: 1,
       min_columns: 6,
-      fixed_rows: this.preview,
     };
   }
 
@@ -45,6 +44,8 @@ export class HuiErrorCard extends LitElement implements LovelaceCard {
   protected render() {
     const error =
       this._config?.error ||
+      (this.severity === "warning" &&
+        this.hass?.localize("ui.errors.config.configuration_warning")) ||
       this.hass?.localize("ui.errors.config.configuration_error");
     const showTitle =
       this.hass === undefined || this.hass?.user?.is_admin || this.preview;
@@ -83,12 +84,12 @@ export class HuiErrorCard extends LitElement implements LovelaceCard {
       opacity: 0.12;
       pointer-events: none;
       content: "";
-      border-radius: var(--ha-card-border-radius, 12px);
+      border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
     }
     .header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--ha-space-2);
       padding: 16px;
     }
     .message {

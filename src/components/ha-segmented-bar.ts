@@ -1,13 +1,16 @@
 import type { TemplateResult } from "lit";
 import { css, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
+import { classMap } from "lit/directives/class-map";
 import { styleMap } from "lit/directives/style-map";
+import { fireEvent } from "../common/dom/fire_event";
 import "./ha-tooltip";
 
 export interface Segment {
   value: number;
   color: string;
   label?: TemplateResult | string;
+  entityId?: string;
 }
 
 @customElement("ha-segmented-bar")
@@ -24,46 +27,76 @@ class HaSegmentedBar extends LitElement {
   @property({ type: Boolean, attribute: "hide-tooltip" })
   public hideTooltip = false;
 
+  @property({ type: Boolean }) public clickable = false;
+
+  @property({ type: Boolean, attribute: "bar-clickable" })
+  public barClickable = false;
+
+  @property({ attribute: false })
+  public hiddenSegments?: number[];
+
   protected render(): TemplateResult {
-    const totalValue = this.segments.reduce(
-      (acc, segment) => acc + segment.value,
-      0
-    );
+    const totalValue = this.segments.reduce((acc, segment, index) => {
+      if (this.hiddenSegments?.includes(index)) return acc;
+      return acc + segment.value;
+    }, 0);
     return html`
       <div class="container">
-        <div class="heading">
-          <div class="title">
-            <span>${this.heading}</span>
-            <span>${this.description}</span>
-          </div>
-          <slot name="extra"></slot>
-        </div>
+        ${this.heading || this.description
+          ? html`
+              <div class="heading">
+                <div class="title">
+                  <span>${this.heading}</span>
+                  <span>${this.description}</span>
+                </div>
+                <slot name="extra"></slot>
+              </div>
+            `
+          : nothing}
         <div class="bar">
-          ${this.segments.map((segment) => {
-            const bar = html`<div
-              style=${styleMap({
-                width: `${(segment.value / totalValue) * 100}%`,
-                backgroundColor: segment.color,
-              })}
-            ></div>`;
-            return this.hideTooltip && !segment.label
-              ? bar
-              : html`
-                  <ha-tooltip>
-                    <span slot="content">${segment.label}</span>
-                    ${bar}
-                  </ha-tooltip>
-                `;
-          })}
+          ${this.segments.map(
+            (segment, index) => html`
+              ${this.hideTooltip || !segment.label
+                ? nothing
+                : html`
+                    <ha-tooltip for="segment-${index}" placement="top">
+                      ${segment.label}
+                      (${((segment.value / totalValue) * 100).toFixed(1)}%)
+                    </ha-tooltip>
+                  `}
+              <div
+                id="segment-${index}"
+                class=${classMap({ clickable: this.barClickable })}
+                data-index=${index}
+                @click=${this.barClickable ? this._handleSegmentClick : nothing}
+                style=${styleMap({
+                  width: `${(segment.value / totalValue) * 100}%`,
+                  backgroundColor: segment.color,
+                  display: this.hiddenSegments?.includes(index)
+                    ? "none"
+                    : "block",
+                })}
+              ></div>
+            `
+          )}
         </div>
         ${this.hideLegend
           ? nothing
           : html`
               <ul class="legend">
-                ${this.segments.map((segment) =>
+                ${this.segments.map((segment, index) =>
                   segment.label
                     ? html`
-                        <li>
+                        <li
+                          class=${classMap({
+                            clickable: this.clickable,
+                            hidden: this.hiddenSegments?.includes(index),
+                          })}
+                          data-index=${index}
+                          @click=${this.clickable
+                            ? this._handleLegendClick
+                            : nothing}
+                        >
                           <div
                             class="bullet"
                             style=${styleMap({
@@ -81,6 +114,24 @@ class HaSegmentedBar extends LitElement {
     `;
   }
 
+  private _handleSegmentClick(ev: Event): void {
+    const target = ev.currentTarget as HTMLElement;
+    const index = Number(target.dataset.index);
+    const segment = this.segments[index];
+    if (segment) {
+      fireEvent(this, "segment-clicked", { index, segment });
+    }
+  }
+
+  private _handleLegendClick(ev: Event): void {
+    const target = ev.currentTarget as HTMLElement;
+    const index = Number(target.dataset.index);
+    const segment = this.segments[index];
+    if (segment) {
+      fireEvent(this, "legend-item-clicked", { index, segment });
+    }
+  }
+
   static styles = css`
     .container {
       width: 100%;
@@ -88,7 +139,7 @@ class HaSegmentedBar extends LitElement {
     .heading {
       display: flex;
       flex-direction: row;
-      gap: 8px;
+      gap: var(--ha-space-2);
     }
     .heading .title {
       flex: 1;
@@ -104,7 +155,7 @@ class HaSegmentedBar extends LitElement {
     .bar {
       display: flex;
       overflow: hidden;
-      border-radius: var(--ha-bar-border-radius, 4px);
+      border-radius: var(--ha-bar-border-radius, var(--ha-border-radius-sm));
       width: 100%;
       height: 12px;
       margin: 2px 0;
@@ -116,14 +167,17 @@ class HaSegmentedBar extends LitElement {
     .bar div {
       height: 100%;
     }
-    .bar div:hover {
+    .bar div.clickable {
+      cursor: pointer;
+    }
+    .bar div.clickable:hover {
       opacity: 0.8;
     }
     .legend {
       display: flex;
       flex-direction: row;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: var(--ha-space-3);
       margin: 12px 0;
       padding: 0;
       list-style: none;
@@ -131,16 +185,28 @@ class HaSegmentedBar extends LitElement {
     .legend li {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--ha-space-1);
       font-size: var(--ha-font-size-s);
     }
     .legend li .bullet {
       width: 12px;
       height: 12px;
-      border-radius: 50%;
+      border-radius: var(--ha-border-radius-circle);
     }
     .spacer {
       flex: 1;
+    }
+    .legend li.clickable {
+      cursor: pointer;
+    }
+    .legend li.clickable:hover {
+      opacity: 0.8;
+    }
+    .legend li.hidden {
+      opacity: 0.5;
+    }
+    .legend li.hidden .label {
+      text-decoration: line-through;
     }
   `;
 }
@@ -148,5 +214,9 @@ class HaSegmentedBar extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "ha-segmented-bar": HaSegmentedBar;
+  }
+  interface HASSDomEvents {
+    "segment-clicked": { index: number; segment: Segment };
+    "legend-item-clicked": { index: number; segment: Segment };
   }
 }

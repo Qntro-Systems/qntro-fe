@@ -6,6 +6,7 @@ import memoizeOne from "memoize-one";
 import type { HASSDomEvent } from "../../../../common/dom/fire_event";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import { computeDomain } from "../../../../common/entity/compute_domain";
+import { computeEntityNameList } from "../../../../common/entity/compute_entity_name_display";
 import type { LocalizeFunc } from "../../../../common/translations/localize";
 import { computeRTL } from "../../../../common/util/compute_rtl";
 import "../../../../components/data-table/ha-data-table";
@@ -42,9 +43,6 @@ export class HuiEntityPickerTable extends LitElement {
 
   @property({ type: Boolean }) public narrow = false;
 
-  @property({ type: Boolean, attribute: "no-label-float" })
-  public noLabelFloat? = false;
-
   @property({ type: Array }) public entities?: string[];
 
   protected firstUpdated(_changedProperties: PropertyValues): void {
@@ -62,9 +60,14 @@ export class HuiEntityPickerTable extends LitElement {
         (entity) => {
           const stateObj = this.hass.states[entity];
 
-          const entityName = this.hass.formatEntityName(stateObj, "entity");
-          const deviceName = this.hass.formatEntityName(stateObj, "device");
-          const areaName = this.hass.formatEntityName(stateObj, "area");
+          const [entityName, deviceName, areaName] = computeEntityNameList(
+            stateObj,
+            [{ type: "entity" }, { type: "device" }, { type: "area" }],
+            this.hass.entities,
+            this.hass.devices,
+            this.hass.areas,
+            this.hass.floors
+          );
           const name = [deviceName, entityName].filter(Boolean).join(" ");
           const domain = computeDomain(entity);
 
@@ -101,7 +104,6 @@ export class HuiEntityPickerTable extends LitElement {
     return html`
       <ha-data-table
         class=${showEntityId ? "show-entity-id" : ""}
-        .hass=${this.hass}
         selectable
         .id=${"entity_id"}
         .columns=${columns}
@@ -109,7 +111,6 @@ export class HuiEntityPickerTable extends LitElement {
         .searchLabel=${this.hass.localize(
           "ui.panel.lovelace.unused_entities.search"
         )}
-        .noLabelFloat=${this.noLabelFloat}
         .noDataText=${this.hass.localize(
           "ui.panel.lovelace.unused_entities.no_data"
         )}

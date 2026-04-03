@@ -4,10 +4,11 @@ import type {
 } from "echarts/types/dist/shared";
 import type { UnsubscribeFunc } from "home-assistant-js-websocket";
 import type { CSSResultGroup } from "lit";
-import { css, html, LitElement } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { relativeTime } from "../../../../../common/datetime/relative_time";
+import { getDeviceArea } from "../../../../../common/entity/context/get_device_context";
 import { navigate } from "../../../../../common/navigate";
 import { throttle } from "../../../../../common/util/throttle";
 import "../../../../../components/chart/ha-network-graph";
@@ -16,6 +17,8 @@ import type {
   NetworkLink,
   NetworkNode,
 } from "../../../../../components/chart/ha-network-graph";
+import "../../../../../components/input/ha-input-search";
+import type { HaInputSearch } from "../../../../../components/input/ha-input-search";
 import type {
   BluetoothDeviceData,
   BluetoothScannersDetails,
@@ -24,10 +27,9 @@ import {
   subscribeBluetoothAdvertisements,
   subscribeBluetoothScannersDetails,
 } from "../../../../../data/bluetooth";
-import type { DeviceRegistryEntry } from "../../../../../data/device_registry";
+import type { DeviceRegistryEntry } from "../../../../../data/device/device_registry";
 import "../../../../../layouts/hass-subpage";
 import type { HomeAssistant, Route } from "../../../../../types";
-import { bluetoothAdvertisementMonitorTabs } from "./bluetooth-advertisement-monitor";
 
 const UPDATE_THROTTLE_TIME = 10000;
 
@@ -59,6 +61,8 @@ export class BluetoothNetworkVisualization extends LitElement {
   @state() private _scanners: BluetoothScannersDetails = {};
 
   @state() private _sourceDevices: Record<string, DeviceRegistryEntry> = {};
+
+  @state() private _searchFilter = "";
 
   private _unsub_advertisements?: UnsubscribeFunc;
 
@@ -118,21 +122,58 @@ export class BluetoothNetworkVisualization extends LitElement {
 
   protected render() {
     return html`
-      <hass-tabs-subpage
+      <hass-subpage
         .hass=${this.hass}
         .narrow=${this.narrow}
-        .route=${this.route}
-        header=${this.hass.localize("ui.panel.config.bluetooth.visualization")}
-        .tabs=${bluetoothAdvertisementMonitorTabs}
+        .header=${this.hass.localize(
+          "ui.panel.config.bluetooth.navigation.visualization"
+        )}
+        back-path="/config/bluetooth/dashboard"
       >
+        ${this.narrow
+          ? html`<div slot="header">${this._renderInputSearch()}</div>`
+          : nothing}
         <ha-network-graph
           .hass=${this.hass}
+          .searchFilter=${this._searchFilter}
           .data=${this._formatNetworkData(this._data, this._scanners)}
+          .searchableAttributes=${this._getSearchableAttributes}
           .tooltipFormatter=${this._tooltipFormatter}
           @chart-click=${this._handleChartClick}
-        ></ha-network-graph>
-      </hass-tabs-subpage>
+        >
+          ${!this.narrow ? this._renderInputSearch("search") : nothing}
+        </ha-network-graph>
+      </hass-subpage>
     `;
+  }
+
+  private _renderInputSearch(slot = "") {
+    return html`<ha-input-search
+      appearance="outlined"
+      slot=${slot}
+      .value=${this._searchFilter}
+      @input=${this._handleSearchChange}
+    ></ha-input-search>`;
+  }
+
+  private _getSearchableAttributes = (nodeId: string): string[] => {
+    const attributes: string[] = [];
+    const device = this._sourceDevices[nodeId];
+    if (device?.manufacturer) {
+      attributes.push(device.manufacturer);
+    }
+    if (device?.model) {
+      attributes.push(device.model);
+    }
+    const scanner = this._scanners[nodeId];
+    if (scanner?.name) {
+      attributes.push(scanner.name);
+    }
+    return attributes;
+  };
+
+  private _handleSearchChange(ev: InputEvent): void {
+    this._searchFilter = (ev.target as HaInputSearch).value ?? "";
   }
 
   private _getRssiColorVar = memoizeOne((rssi: number): string => {
@@ -194,11 +235,17 @@ export class BluetoothNetworkVisualization extends LitElement {
       ];
       const links: NetworkLink[] = [];
       Object.values(scanners).forEach((scanner) => {
-        const scannerDevice = this._sourceDevices[scanner.source];
+        const scannerDevice = this._sourceDevices[scanner.source] as
+          | DeviceRegistryEntry
+          | undefined;
+        const area = scannerDevice
+          ? getDeviceArea(scannerDevice, this.hass.areas)
+          : undefined;
         nodes.push({
           id: scanner.source,
           name:
             scannerDevice?.name_by_user || scannerDevice?.name || scanner.name,
+          context: area?.name,
           category: 1,
           value: 5,
           symbol: "circle",
@@ -231,10 +278,16 @@ export class BluetoothNetworkVisualization extends LitElement {
           });
           return;
         }
-        const device = this._sourceDevices[node.address];
+        const device = this._sourceDevices[node.address] as
+          | DeviceRegistryEntry
+          | undefined;
+        const area = device
+          ? getDeviceArea(device, this.hass.areas)
+          : undefined;
         nodes.push({
           id: node.address,
           name: this._getBluetoothDeviceName(node.address),
+          context: area?.name,
           value: device ? 1 : 0,
           category: device ? 2 : 3,
           symbolSize: 20,
@@ -294,15 +347,20 @@ export class BluetoothNetworkVisualization extends LitElement {
       const btDevice = this._data.find((d) => d.address === address);
       if (btDevice) {
         tooltipText = `<b>${name}</b><br><b>${this.hass.localize("ui.panel.config.bluetooth.address")}:</b> ${address}<br><b>${this.hass.localize("ui.panel.config.bluetooth.rssi")}:</b> ${btDevice.rssi}<br><b>${this.hass.localize("ui.panel.config.bluetooth.source")}:</b> ${btDevice.source}<br><b>${this.hass.localize("ui.panel.config.bluetooth.updated")}:</b> ${relativeTime(new Date(btDevice.time * 1000), this.hass.locale)}`;
+        const device = this._sourceDevices[address];
+        if (device) {
+          const area = getDeviceArea(device, this.hass.areas);
+          if (area) {
+            tooltipText += `<br><b>${this.hass.localize("ui.panel.config.bluetooth.area")}: </b>${area.name}`;
+          }
+        }
       } else {
         const device = this._sourceDevices[address];
         if (device) {
           tooltipText = `<b>${name}</b><br><b>${this.hass.localize("ui.panel.config.bluetooth.address")}:</b> ${address}`;
-          if (device.area_id) {
-            const area = this.hass.areas[device.area_id];
-            if (area) {
-              tooltipText += `<br><b>${this.hass.localize("ui.panel.config.bluetooth.area")}: </b>${area.name}`;
-            }
+          const area = getDeviceArea(device, this.hass.areas);
+          if (area) {
+            tooltipText += `<br><b>${this.hass.localize("ui.panel.config.bluetooth.area")}: </b>${area.name}`;
           }
         }
       }
@@ -328,6 +386,13 @@ export class BluetoothNetworkVisualization extends LitElement {
       css`
         ha-network-graph {
           height: 100%;
+        }
+        [slot="header"] {
+          display: flex;
+          align-items: center;
+        }
+        ha-input-search {
+          flex: 1;
         }
       `,
     ];

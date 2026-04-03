@@ -5,16 +5,16 @@ import { customElement, property } from "lit/decorators";
 import { join } from "lit/directives/join";
 import { ensureArray } from "../common/array/ensure-array";
 import { computeStateDomain } from "../common/entity/compute_state_domain";
-import { computeStateName } from "../common/entity/compute_state_name";
+import { STRINGS_SEPARATOR_DOT } from "../common/const";
 import "../components/ha-relative-time";
-import { isUnavailableState } from "../data/entity";
+import { isUnavailableState } from "../data/entity/entity";
 import { SENSOR_DEVICE_CLASS_TIMESTAMP } from "../data/sensor";
 import type { UpdateEntity } from "../data/update";
 import { computeUpdateStateDisplay } from "../data/update";
 import "../panels/lovelace/components/hui-timestamp-display";
 import type { HomeAssistant } from "../types";
 
-const TIMESTAMP_STATE_DOMAINS = ["button", "input_button", "scene"];
+const TIMESTAMP_STATE_DOMAINS = ["button", "infrared", "input_button", "scene"];
 
 export const STATE_DISPLAY_SPECIAL_CONTENT = [
   "remaining_time",
@@ -100,8 +100,17 @@ class StateDisplay extends LitElement {
 
       return this.hass!.formatEntityState(stateObj);
     }
-    if (content === "name") {
-      return html`${this.name || computeStateName(stateObj)}`;
+    if (content === "name" && this.name) {
+      return html`${this.name}`;
+    }
+
+    if (
+      content === "device_name" ||
+      content === "area_name" ||
+      content === "floor_name"
+    ) {
+      const type = content.replace("_name", "") as "device" | "area" | "floor";
+      return this.hass.formatEntityName(stateObj, { type }) || undefined;
     }
 
     let relativeDateTime: string | Date | undefined;
@@ -186,7 +195,7 @@ class StateDisplay extends LitElement {
       return html`${this.hass!.formatEntityState(stateObj)}`;
     }
 
-    return join(values, " · ");
+    return join(values, STRINGS_SEPARATOR_DOT);
   }
 }
 

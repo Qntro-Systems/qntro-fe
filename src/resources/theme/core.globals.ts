@@ -19,6 +19,57 @@ export const coreStyles = css`
     --ha-border-radius-pill: 9999px;
     --ha-border-radius-circle: 50%;
     --ha-border-radius-square: 0;
+
+    /* Spacing */
+    --ha-space-1: 4px;
+    --ha-space-2: 8px;
+    --ha-space-3: 12px;
+    --ha-space-4: 16px;
+    --ha-space-5: 20px;
+    --ha-space-6: 24px;
+    --ha-space-7: 28px;
+    --ha-space-8: 32px;
+    --ha-space-9: 36px;
+    --ha-space-10: 40px;
+    --ha-space-11: 44px;
+    --ha-space-12: 48px;
+    --ha-space-13: 52px;
+    --ha-space-14: 56px;
+    --ha-space-15: 60px;
+    --ha-space-16: 64px;
+    --ha-space-17: 68px;
+    --ha-space-18: 72px;
+    --ha-space-19: 76px;
+    --ha-space-20: 80px;
+
+    --ha-shadow-offset-x-sm: 0;
+    --ha-shadow-offset-x-md: 0;
+    --ha-shadow-offset-x-lg: 0;
+    --ha-shadow-offset-y-sm: 2px;
+    --ha-shadow-offset-y-md: 4px;
+    --ha-shadow-offset-y-lg: 8px;
+    --ha-shadow-blur-sm: 4px;
+    --ha-shadow-blur-md: 8px;
+    --ha-shadow-blur-lg: 12px;
+    --ha-shadow-spread-sm: 0;
+    --ha-shadow-spread-md: 0;
+    --ha-shadow-spread-lg: 0;
+
+    --ha-animation-duration-none: 1ms;
+    --ha-animation-duration-instant: 75ms;
+    --ha-animation-duration-fast: 150ms;
+    --ha-animation-duration-normal: 250ms;
+    --ha-animation-duration-slow: 350ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      --ha-animation-duration-none: 1ms;
+      --ha-animation-duration-instant: 1ms;
+      --ha-animation-duration-fast: 1ms;
+      --ha-animation-duration-normal: 1ms;
+      --ha-animation-duration-slow: 1ms;
+    }
   }
 `;
 

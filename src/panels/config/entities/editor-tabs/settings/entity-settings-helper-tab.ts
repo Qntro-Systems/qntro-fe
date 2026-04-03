@@ -4,8 +4,10 @@ import { customElement, property, query, state } from "lit/decorators";
 import { isComponentLoaded } from "../../../../../common/config/is_component_loaded";
 import { dynamicElement } from "../../../../../common/dom/dynamic-element-directive";
 import { fireEvent } from "../../../../../common/dom/fire_event";
-import type { ExtEntityRegistryEntry } from "../../../../../data/entity_registry";
-import { removeEntityRegistryEntry } from "../../../../../data/entity_registry";
+import { computeEntityEntryName } from "../../../../../common/entity/compute_entity_name";
+import "../../../../../components/ha-button";
+import type { ExtEntityRegistryEntry } from "../../../../../data/entity/entity_registry";
+import { removeEntityRegistryEntry } from "../../../../../data/entity/entity_registry";
 import { HELPERS_CRUD } from "../../../../../data/helpers_crud";
 import { showConfirmationDialog } from "../../../../../dialogs/generic/show-dialog-box";
 import { haStyle } from "../../../../../resources/styles";
@@ -22,8 +24,8 @@ import "../../../helpers/forms/ha-schedule-form";
 import "../../../helpers/forms/ha-timer-form";
 import "../../../voice-assistants/entity-voice-settings";
 import "../../entity-registry-settings-editor";
-import "../../../../../components/ha-button";
 import type { EntityRegistrySettingsEditor } from "../../entity-registry-settings-editor";
+import { getDeleteConfirmationText } from "../../get-delete-confirmation-text";
 
 @customElement("entity-settings-helper-tab")
 export class EntitySettingsHelperTab extends LitElement {
@@ -35,7 +37,7 @@ export class EntitySettingsHelperTab extends LitElement {
 
   @state() private _item?: Helper | null;
 
-  @state() private _submitting?: boolean;
+  @state() private _submitting = false;
 
   @state() private _componentLoaded?: boolean;
 
@@ -44,7 +46,10 @@ export class EntitySettingsHelperTab extends LitElement {
 
   protected firstUpdated(changedProperties: PropertyValues) {
     super.firstUpdated(changedProperties);
-    this._componentLoaded = isComponentLoaded(this.hass, this.entry.platform);
+    this._componentLoaded = isComponentLoaded(
+      this.hass.config,
+      this.entry.platform
+    );
   }
 
   protected updated(changedProperties: PropertyValues) {
@@ -72,26 +77,32 @@ export class EntitySettingsHelperTab extends LitElement {
         ${this._error
           ? html`<ha-alert alert-type="error">${this._error}</ha-alert>`
           : ""}
+        ${this._item === null
+          ? html`<ha-alert alert-type="info"
+              >${this.hass.localize(
+                "ui.dialogs.helper_settings.yaml_not_editable"
+              )}</ha-alert
+            >`
+          : nothing}
         ${!this._componentLoaded
           ? this.hass.localize(
               "ui.dialogs.helper_settings.platform_not_loaded",
               { platform: this.entry.platform }
             )
-          : this._item === null
-            ? this.hass.localize("ui.dialogs.helper_settings.yaml_not_editable")
-            : html`
-                <span @value-changed=${this._valueChanged}>
-                  ${dynamicElement(`ha-${this.entry.platform}-form`, {
-                    hass: this.hass,
-                    item: this._item,
-                    entry: this.entry,
-                  })}
-                </span>
-              `}
+          : html`
+              <span @value-changed=${this._valueChanged}>
+                ${dynamicElement(`ha-${this.entry.platform}-form`, {
+                  hass: this.hass,
+                  item: this._item,
+                  entry: this.entry,
+                  disabled: this._item === null,
+                })}
+              </span>
+            `}
         <entity-registry-settings-editor
           .hass=${this.hass}
           .entry=${this.entry}
-          .disabled=${this._submitting}
+          .disabled=${!!this._submitting}
           @change=${this._entityRegistryChanged}
           hide-name
           hide-icon
@@ -109,7 +120,7 @@ export class EntitySettingsHelperTab extends LitElement {
         </ha-button>
         <ha-button
           @click=${this._updateItem}
-          .disabled=${this._submitting || (this._item && !this._item.name)}
+          .disabled=${!!this._submitting || !!(this._item && !this._item.name)}
         >
           ${this.hass.localize("ui.dialogs.entity_registry.editor.update")}
         </ha-button>
@@ -122,6 +133,9 @@ export class EntitySettingsHelperTab extends LitElement {
   }
 
   private _valueChanged(ev: CustomEvent): void {
+    if (this._item === null) {
+      return;
+    }
     this._error = undefined;
     this._item = ev.detail.value;
   }
@@ -153,11 +167,19 @@ export class EntitySettingsHelperTab extends LitElement {
   }
 
   private async _confirmDeleteItem(): Promise<void> {
+    const name = computeEntityEntryName(this.entry, this.hass.devices);
+    const confirmationText = await getDeleteConfirmationText(
+      this.hass,
+      this.entry,
+      name
+    );
+
     if (
       !(await showConfirmationDialog(this, {
-        text: this.hass.localize(
-          "ui.dialogs.entity_registry.editor.confirm_delete"
+        title: this.hass.localize(
+          "ui.dialogs.entity_registry.editor.confirm_delete_title"
         ),
+        text: confirmationText,
         confirmText: this.hass.localize("ui.common.delete"),
         dismissText: this.hass.localize("ui.common.cancel"),
         destructive: true,
@@ -194,6 +216,10 @@ export class EntitySettingsHelperTab extends LitElement {
         :host {
           display: block;
           padding: 0 !important;
+        }
+        ha-alert {
+          display: block;
+          margin-bottom: var(--ha-space-4);
         }
         .form {
           padding: 20px 24px;

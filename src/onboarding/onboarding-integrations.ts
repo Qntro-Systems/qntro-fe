@@ -192,7 +192,7 @@ class OnboardingIntegrations extends SubscribeMixin(LitElement) {
   }
 
   private async _scanUSBDevices() {
-    if (!isComponentLoaded(this.hass, "usb")) {
+    if (!isComponentLoaded(this.hass.config, "usb")) {
       return;
     }
     await scanUSBDevices(this.hass);
@@ -212,7 +212,7 @@ class OnboardingIntegrations extends SubscribeMixin(LitElement) {
           margin-top: 24px;
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(106px, 1fr));
-          row-gap: 24px;
+          row-gap: var(--ha-space-6);
         }
         .more {
           display: flex;

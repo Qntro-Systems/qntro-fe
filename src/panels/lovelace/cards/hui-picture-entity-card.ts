@@ -5,7 +5,6 @@ import { classMap } from "lit/directives/class-map";
 import { ifDefined } from "lit/directives/if-defined";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
 import { computeDomain } from "../../../common/entity/compute_domain";
-import { computeStateName } from "../../../common/entity/compute_state_name";
 import "../../../components/ha-card";
 import type { CameraEntity } from "../../../data/camera";
 import type { ImageEntity } from "../../../data/image";
@@ -126,7 +125,7 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
       `;
     }
 
-    const name = this._config.name || computeStateName(stateObj);
+    const name = this.hass.formatEntityName(stateObj, this._config.name);
     const entityState = this.hass.formatEntityState(stateObj);
 
     let footer: TemplateResult | string = "";
@@ -144,7 +143,10 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
     }
 
     const domain: string = computeDomain(this._config.entity);
-    let image: string | undefined = this._config.image;
+    let image: string | undefined =
+      (typeof this._config?.image === "object" &&
+        this._config.image.media_content_id) ||
+      (this._config.image as string | undefined);
     if (!image) {
       switch (domain) {
         case "image":

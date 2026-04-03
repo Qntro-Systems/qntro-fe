@@ -1,7 +1,7 @@
 import type { LitVirtualizer } from "@lit-labs/virtualizer";
 import { grid } from "@lit-labs/virtualizer/layouts/grid";
 
-import { mdiArrowUpRight, mdiPlay, mdiPlus, mdiKeyboard } from "@mdi/js";
+import { mdiArrowUpRight, mdiKeyboard, mdiPlay, mdiPlus } from "@mdi/js";
 import type { CSSResultGroup, PropertyValues, TemplateResult } from "lit";
 import { css, html, LitElement, nothing } from "lit";
 import {
@@ -15,8 +15,9 @@ import { classMap } from "lit/directives/class-map";
 import { styleMap } from "lit/directives/style-map";
 import { until } from "lit/directives/until";
 import { fireEvent } from "../../common/dom/fire_event";
+import { slugify } from "../../common/string/slugify";
 import { debounce } from "../../common/util/debounce";
-import { isUnavailableState } from "../../data/entity";
+import { isUnavailableState } from "../../data/entity/entity";
 import type {
   MediaPickedEvent,
   MediaPlayerBrowseAction,
@@ -35,7 +36,7 @@ import {
 } from "../../data/media_source";
 import { isTTSMediaSource } from "../../data/tts";
 import { showAlertDialog } from "../../dialogs/generic/show-dialog-box";
-import { haStyle } from "../../resources/styles";
+import { haStyle, haStyleScrollbar } from "../../resources/styles";
 import { loadVirtualizer } from "../../resources/virtualizer";
 import type { HomeAssistant } from "../../types";
 import {
@@ -47,7 +48,6 @@ import { documentationUrl } from "../../util/documentation-url";
 import "../entity/ha-entity-picker";
 import "../ha-alert";
 import "../ha-button";
-import "../ha-button-menu";
 import "../ha-card";
 import "../ha-fab";
 import "../ha-icon-button";
@@ -56,10 +56,10 @@ import "../ha-list-item";
 import "../ha-spinner";
 import "../ha-svg-icon";
 import "../ha-tooltip";
-import "./ha-browse-media-tts";
 import "./ha-browse-media-manual";
-import type { TtsMediaPickedEvent } from "./ha-browse-media-tts";
 import type { ManualMediaPickedEvent } from "./ha-browse-media-manual";
+import "./ha-browse-media-tts";
+import type { TtsMediaPickedEvent } from "./ha-browse-media-tts";
 
 declare global {
   interface HASSDomEvents {
@@ -76,8 +76,8 @@ declare global {
 }
 
 export interface MediaPlayerItemId {
-  media_content_id: string | undefined;
-  media_content_type: string | undefined;
+  media_content_id?: string | undefined;
+  media_content_type?: string | undefined;
 }
 
 const MANUAL_ITEM: MediaPlayerItem = {
@@ -112,6 +112,10 @@ export class HaMediaPlayerBrowse extends LitElement {
   @property({ attribute: false }) public defaultId?: string;
 
   @property({ attribute: false }) public defaultType?: string;
+
+  @property({ attribute: false }) public hideContentType = false;
+
+  @property({ attribute: false }) public contentIdHelper?: string;
 
   // @todo Consider reworking to eliminate need for attribute since it is manipulated internally
   @property({ type: Boolean, reflect: true }) public narrow = false;
@@ -521,6 +525,8 @@ export class HaMediaPlayerBrowse extends LitElement {
                         media_content_type: this.defaultType || "",
                       }}
                       .hass=${this.hass}
+                      .hideContentType=${this.hideContentType}
+                      .contentIdHelper=${this.contentIdHelper}
                       @manual-media-picked=${this._manualPicked}
                     ></ha-browse-media-manual>`
                   : isTTSMediaSource(currentItem.media_content_id)
@@ -578,7 +584,7 @@ export class HaMediaPlayerBrowse extends LitElement {
                               })}
                               .items=${children}
                               .renderItem=${this._renderGridItem}
-                              class="children ${classMap({
+                              class="children ha-scrollbar ${classMap({
                                 portrait:
                                   childrenMediaClass.thumbnail_ratio ===
                                   "portrait",
@@ -606,6 +612,7 @@ export class HaMediaPlayerBrowse extends LitElement {
                                 style=${styleMap({
                                   height: `${children.length * 72 + 26}px`,
                                 })}
+                                class="ha-scrollbar"
                                 .renderItem=${this._renderListItem}
                               ></lit-virtualizer>
                               ${currentItem.not_shown
@@ -687,10 +694,12 @@ export class HaMediaPlayerBrowse extends LitElement {
                 `
               : ""}
           </div>
-          <ha-tooltip .for="grid-${child.title}" distance="-4">
+          <ha-tooltip .for="grid-${slugify(child.title)}" distance="-4">
             ${child.title}
           </ha-tooltip>
-          <div .id="grid-${child.title}" class="title">${child.title}</div>
+          <div .id="grid-${slugify(child.title)}" class="title">
+            ${child.title}
+          </div>
         </ha-card>
       </div>
     `;
@@ -756,6 +765,19 @@ export class HaMediaPlayerBrowse extends LitElement {
       return "";
     }
 
+    if (isBrandUrl(thumbnailUrl)) {
+      // The backend is not aware of the theme used by the users,
+      // so we rewrite the URL to show a proper icon
+      return brandsUrl(
+        {
+          domain: extractDomainFromBrandUrl(thumbnailUrl),
+          type: "icon",
+          darkOptimized: this.hass.themes?.darkMode,
+        },
+        this.hass.auth.data.hassUrl
+      );
+    }
+
     if (thumbnailUrl.startsWith("/")) {
       // Thumbnails served by local API require authentication
       return new Promise((resolve, reject) => {
@@ -775,17 +797,6 @@ export class HaMediaPlayerBrowse extends LitElement {
             reader.onerror = (e) => reject(e);
             reader.readAsDataURL(blob);
           });
-      });
-    }
-
-    if (isBrandUrl(thumbnailUrl)) {
-      // The backend is not aware of the theme used by the users,
-      // so we rewrite the URL to show a proper icon
-      thumbnailUrl = brandsUrl({
-        domain: extractDomainFromBrandUrl(thumbnailUrl),
-        type: "icon",
-        useFallback: true,
-        darkOptimized: this.hass.themes?.darkMode,
       });
     }
 
@@ -972,6 +983,7 @@ export class HaMediaPlayerBrowse extends LitElement {
   static get styles(): CSSResultGroup {
     return [
       haStyle,
+      haStyleScrollbar,
       css`
         :host {
           display: flex;
@@ -1138,7 +1150,7 @@ export class HaMediaPlayerBrowse extends LitElement {
             auto-fit,
             minmax(var(--media-browse-item-size, 175px), 0.1fr)
           );
-          grid-gap: 16px;
+          grid-gap: var(--ha-space-4);
           padding: 16px;
         }
 
@@ -1174,7 +1186,8 @@ export class HaMediaPlayerBrowse extends LitElement {
         }
 
         ha-card .image {
-          border-radius: 3px 3px 0 0;
+          border-radius: var(--ha-border-radius-sm) var(--ha-border-radius-sm)
+            var(--ha-border-radius-square) var(--ha-border-radius-square);
         }
 
         .image {
@@ -1216,7 +1229,7 @@ export class HaMediaPlayerBrowse extends LitElement {
         .child .play {
           position: absolute;
           transition: color 0.5s;
-          border-radius: 50%;
+          border-radius: var(--ha-border-radius-circle);
           top: calc(50% - 40px);
           right: calc(50% - 35px);
           opacity: 0;
@@ -1224,7 +1237,7 @@ export class HaMediaPlayerBrowse extends LitElement {
         }
 
         .child .play:not(.can_expand) {
-          --mdc-icon-button-size: 70px;
+          --ha-icon-button-size: 70px;
           --mdc-icon-size: 48px;
           background-color: var(--primary-color);
           color: var(--text-primary-color);
@@ -1273,7 +1286,7 @@ export class HaMediaPlayerBrowse extends LitElement {
           background-size: contain;
           background-repeat: no-repeat;
           background-position: center;
-          border-radius: 2px;
+          border-radius: var(--ha-border-radius-sm);
           display: flex;
           align-content: center;
           align-items: center;
@@ -1284,8 +1297,8 @@ export class HaMediaPlayerBrowse extends LitElement {
           opacity: 0;
           transition: all 0.5s;
           background-color: rgba(var(--rgb-card-background-color), 0.5);
-          border-radius: 50%;
-          --mdc-icon-button-size: 40px;
+          border-radius: var(--ha-border-radius-circle);
+          --ha-icon-button-size: 40px;
         }
 
         ha-list-item:hover .graphic .play {
@@ -1344,7 +1357,7 @@ export class HaMediaPlayerBrowse extends LitElement {
           margin-bottom: 8px;
           position: relative;
           background-position: center;
-          border-radius: 0;
+          border-radius: var(--ha-border-radius-square);
           transition:
             width 0.4s,
             height 0.4s,

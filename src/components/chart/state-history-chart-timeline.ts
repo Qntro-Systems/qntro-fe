@@ -15,8 +15,8 @@ import type { TimelineEntity } from "../../data/history";
 import type { HomeAssistant } from "../../types";
 import { MIN_TIME_BETWEEN_UPDATES } from "./ha-chart-base";
 import { computeTimelineColor } from "./timeline-color";
-import type { ECOption } from "../../resources/echarts";
-import echarts from "../../resources/echarts";
+import type { ECOption } from "../../resources/echarts/echarts";
+import echarts from "../../resources/echarts/echarts";
 import { luminosity } from "../../common/color/rgb";
 import { hex2rgb } from "../../common/color/convert-color";
 import { measureTextWidth } from "../../util/text";
@@ -47,9 +47,9 @@ export class StateHistoryChartTimeline extends LitElement {
 
   @property({ attribute: false }) public endTime!: Date;
 
-  @property({ attribute: false, type: Number }) public paddingYAxis = 0;
+  @property({ attribute: false }) public paddingYAxis = 0;
 
-  @property({ attribute: false, type: Number }) public chartIndex?;
+  @property({ attribute: false }) public chartIndex?;
 
   @property({ attribute: "hide-reset-button", type: Boolean })
   public hideResetButton?: boolean;
@@ -255,7 +255,10 @@ export class StateHistoryChartTimeline extends LitElement {
         right: rtl ? labelWidth : 1,
       },
       tooltip: {
-        appendTo: document.body,
+        renderMode: "html",
+        position: "bottom",
+        align: "center",
+        confine: true,
         formatter: this._renderTooltip,
       },
     };
@@ -373,6 +376,7 @@ export class StateHistoryChartTimeline extends LitElement {
           itemName: 3,
         },
         renderItem: this._renderItem,
+        progressive: 0,
       });
     });
 

@@ -13,13 +13,13 @@ import { formatTime24h } from "../../../../common/datetime/format_time";
 import { useAmPm } from "../../../../common/datetime/use_am_pm";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import "../../../../components/ha-icon-picker";
-import "../../../../components/ha-textfield";
+import "../../../../components/input/ha-input";
 import type { Schedule, ScheduleDay } from "../../../../data/schedule";
 import { weekdays } from "../../../../data/schedule";
 import { TimeZone } from "../../../../data/translation";
-import { showScheduleBlockInfoDialog } from "./show-dialog-schedule-block-info";
 import { haStyle } from "../../../../resources/styles";
 import type { HomeAssistant } from "../../../../types";
+import { showScheduleBlockInfoDialog } from "./show-dialog-schedule-block-info";
 
 const defaultFullCalendarConfig: CalendarOptions = {
   plugins: [timeGridPlugin, interactionPlugin],
@@ -42,6 +42,8 @@ class HaScheduleForm extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @property({ type: Boolean }) public new = false;
+
+  @property({ type: Boolean }) public disabled = false;
 
   @state() private _name!: string;
 
@@ -119,30 +121,31 @@ class HaScheduleForm extends LitElement {
 
     return html`
       <div class="form">
-        <ha-textfield
+        <ha-input
           .value=${this._name}
           .configValue=${"name"}
           @input=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.name"
           )}
-          autoValidate
+          auto-validate
           required
           .validationMessage=${this.hass!.localize(
             "ui.dialogs.helper_settings.required_error_msg"
           )}
           dialogInitialFocus
-        ></ha-textfield>
+          .disabled=${this.disabled}
+        ></ha-input>
         <ha-icon-picker
-          .hass=${this.hass}
           .value=${this._icon}
           .configValue=${"icon"}
           @value-changed=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.icon"
           )}
+          .disabled=${this.disabled}
         ></ha-icon-picker>
-        <div id="calendar"></div>
+        ${!this.disabled ? html`<div id="calendar"></div>` : nothing}
       </div>
     `;
   }
@@ -175,7 +178,9 @@ class HaScheduleForm extends LitElement {
   }
 
   protected firstUpdated(): void {
-    this._setupCalendar();
+    if (!this.disabled) {
+      this._setupCalendar();
+    }
   }
 
   private _setupCalendar(): void {
@@ -418,13 +423,13 @@ class HaScheduleForm extends LitElement {
           color: var(--primary-text-color);
         }
 
-        ha-textfield {
-          display: block;
-          margin: 8px 0;
+        ha-input {
+          margin: var(--ha-space-2) 0;
+          --ha-input-padding-bottom: 0;
         }
 
         #calendar {
-          margin: 8px 0;
+          margin: var(--ha-space-2) 0;
           height: 450px;
           width: 100%;
           -webkit-user-select: none;
@@ -459,8 +464,7 @@ class HaScheduleForm extends LitElement {
           height: 0.4rem;
         }
         .fc-scroller::-webkit-scrollbar-thumb {
-          -webkit-border-radius: 4px;
-          border-radius: 4px;
+          border-radius: var(--ha-border-radius-sm);
           background: var(--scrollbar-thumb-color);
         }
         .fc-scroller {

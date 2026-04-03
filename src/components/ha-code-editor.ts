@@ -1,3 +1,5 @@
+import "@home-assistant/webawesome/dist/components/popup/popup";
+import type WaPopup from "@home-assistant/webawesome/dist/components/popup/popup";
 import type {
   Completion,
   CompletionContext,
@@ -5,26 +7,42 @@ import type {
   CompletionResult,
   CompletionSource,
 } from "@codemirror/autocomplete";
+import { redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 import type { Extension, TransactionSpec } from "@codemirror/state";
 import type { EditorView, KeyBinding, ViewUpdate } from "@codemirror/view";
-import { mdiArrowExpand, mdiArrowCollapse } from "@mdi/js";
+import { placeholder } from "@codemirror/view";
+import {
+  mdiArrowCollapse,
+  mdiArrowExpand,
+  mdiContentCopy,
+  mdiBug,
+  mdiBugOutline,
+  mdiFindReplace,
+  mdiRedo,
+  mdiUndo,
+} from "@mdi/js";
 import type { HassEntities } from "home-assistant-js-websocket";
-import type { PropertyValues } from "lit";
-import { css, ReactiveElement, html, render } from "lit";
+import type { CSSResultGroup, PropertyValues } from "lit";
+import { css, html, ReactiveElement, render } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../common/dom/fire_event";
 import { stopPropagation } from "../common/dom/stop_propagation";
 import { getEntityContext } from "../common/entity/context/get_entity_context";
+import { copyToClipboard } from "../common/util/copy-clipboard";
+import { haStyleScrollbar } from "../resources/styles";
 import type { HomeAssistant } from "../types";
+import { showToast } from "../util/toast";
+import "./ha-code-editor-completion-items";
 import type { CompletionItem } from "./ha-code-editor-completion-items";
 import "./ha-icon";
-import "./ha-icon-button";
-import "./ha-code-editor-completion-items";
+import "./ha-icon-button-toolbar";
+import type { HaIconButtonToolbar } from "./ha-icon-button-toolbar";
 
 declare global {
   interface HASSDomEvents {
     "editor-save": undefined;
+    "test-toggle": undefined;
   }
 }
 
@@ -68,12 +86,45 @@ export class HaCodeEditor extends ReactiveElement {
   @property({ type: Boolean, attribute: "disable-fullscreen" })
   public disableFullscreen = false;
 
+  @property({ type: Boolean, attribute: "in-dialog" })
+  public inDialog = false;
+
+  @property({ type: Boolean, attribute: "has-toolbar" })
+  public hasToolbar = true;
+
+  @property({ type: Boolean, attribute: "has-test" })
+  public hasTest = false;
+
+  @property({ attribute: false }) public testing = false;
+
+  @property({ type: String }) public placeholder?: string;
+
   @state() private _value = "";
 
   @state() private _isFullscreen = false;
 
+  @state() private _canUndo = false;
+
+  @state() private _canRedo = false;
+
+  @state() private _canCopy = false;
+
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   private _loadedCodeMirror?: typeof import("../resources/codemirror");
+
+  private _completionInfoPopover?: WaPopup;
+
+  private _completionInfoContainer?: HTMLDivElement;
+
+  private _completionInfoDestroy?: () => void;
+
+  private _completionInfoRequest = 0;
+
+  private _completionInfoKey?: string;
+
+  private _completionInfoFrame?: number;
+
+  private _editorToolbar?: HaIconButtonToolbar;
 
   private _iconList?: Completion[];
 
@@ -98,6 +149,7 @@ export class HaCodeEditor extends ReactiveElement {
 
   public connectedCallback() {
     super.connectedCallback();
+    this.classList.toggle("in-dialog", this.inDialog);
     // Force update on reconnection so editor is recreated
     if (this.hasUpdated) {
       this.requestUpdate();
@@ -116,12 +168,19 @@ export class HaCodeEditor extends ReactiveElement {
   }
 
   public disconnectedCallback() {
+    fireEvent(this, "dialog-set-fullscreen", false);
+    this._clearCompletionInfo();
+    if (this._completionInfoFrame !== undefined) {
+      cancelAnimationFrame(this._completionInfoFrame);
+      this._completionInfoFrame = undefined;
+    }
+    this._completionInfoPopover?.remove();
+    this._completionInfoPopover = undefined;
+    this._completionInfoContainer = undefined;
     super.disconnectedCallback();
     this.removeEventListener("keydown", stopPropagation);
     this.removeEventListener("keydown", this._handleKeyDown);
-    if (this._isFullscreen) {
-      this._toggleFullscreen();
-    }
+    this._updateFullscreenState(false);
     this.updateComplete.then(() => {
       this.codemirror!.destroy();
       delete this.codemirror;
@@ -157,6 +216,7 @@ export class HaCodeEditor extends ReactiveElement {
           this._loadedCodeMirror!.EditorView!.editable.of(!this.readOnly)
         ),
       });
+      this._updateToolbarButtons();
     }
     if (changedProps.has("linewrap")) {
       transactions.push({
@@ -177,14 +237,29 @@ export class HaCodeEditor extends ReactiveElement {
     if (transactions.length > 0) {
       this.codemirror.dispatch(...transactions);
     }
+    if (changedProps.has("hasToolbar")) {
+      this._updateToolbar();
+    }
     if (changedProps.has("error")) {
       this.classList.toggle("error-state", this.error);
     }
+    if (changedProps.has("inDialog")) {
+      this.classList.toggle("in-dialog", this.inDialog);
+    }
     if (changedProps.has("_isFullscreen")) {
       this.classList.toggle("fullscreen", this._isFullscreen);
+      this._updateToolbarButtons();
+    }
+    if (
+      changedProps.has("_canCopy") ||
+      changedProps.has("_canUndo") ||
+      changedProps.has("_canRedo") ||
+      changedProps.has("testing")
+    ) {
+      this._updateToolbarButtons();
     }
     if (changedProps.has("disableFullscreen")) {
-      this._updateFullscreenButton();
+      this._updateFullscreenState();
     }
   }
 
@@ -205,6 +280,7 @@ export class HaCodeEditor extends ReactiveElement {
       this._loadedCodeMirror.crosshairCursor(),
       this._loadedCodeMirror.highlightSelectionMatches(),
       this._loadedCodeMirror.highlightActiveLine(),
+      this._loadedCodeMirror.dropCursor(),
       this._loadedCodeMirror.indentationMarkers({
         thickness: 0,
         activeThickness: 1,
@@ -220,6 +296,7 @@ export class HaCodeEditor extends ReactiveElement {
         ...this._loadedCodeMirror.tabKeyBindings,
         saveKeyBinding,
       ]),
+      this._loadedCodeMirror.search({ top: true }),
       this._loadedCodeMirror.langCompartment.of(this._mode),
       this._loadedCodeMirror.haTheme,
       this._loadedCodeMirror.haSyntaxHighlighting,
@@ -233,6 +310,10 @@ export class HaCodeEditor extends ReactiveElement {
       this._loadedCodeMirror.foldingCompartment.of(
         this._getFoldingExtensions()
       ),
+      this._loadedCodeMirror.tooltips({
+        position: "absolute",
+      }),
+      ...(this.placeholder ? [placeholder(this.placeholder)] : []),
     ];
 
     if (!this.readOnly) {
@@ -253,6 +334,7 @@ export class HaCodeEditor extends ReactiveElement {
       }
     }
 
+    // Create the code editor
     this.codemirror = new this._loadedCodeMirror.EditorView({
       state: this._loadedCodeMirror.EditorState.create({
         doc: this._value,
@@ -260,71 +342,219 @@ export class HaCodeEditor extends ReactiveElement {
       }),
       parent: this.renderRoot,
     });
+    this._canCopy = this._value?.length > 0;
 
-    this._updateFullscreenButton();
+    const cmScroller = this.codemirror.dom.querySelector(".cm-scroller");
+    if (cmScroller) {
+      cmScroller.classList.add("ha-scrollbar");
+    }
+
+    // Update the toolbar. Creating it if required
+    this._updateToolbar();
   }
 
-  private _updateFullscreenButton() {
-    const existingButton = this.renderRoot.querySelector(".fullscreen-button");
+  private _fullscreenLabel(): string {
+    if (this._isFullscreen)
+      return (
+        this.hass?.localize("ui.components.yaml-editor.exit_fullscreen") ||
+        "Exit fullscreen"
+      );
+    return (
+      this.hass?.localize("ui.components.yaml-editor.enter_fullscreen") ||
+      "Enter fullscreen"
+    );
+  }
 
-    if (this.disableFullscreen) {
-      // Remove button if it exists and fullscreen is disabled
-      if (existingButton) {
-        existingButton.remove();
-      }
-      // Exit fullscreen if currently in fullscreen mode
-      if (this._isFullscreen) {
-        this._isFullscreen = false;
-      }
+  private _fullscreenIcon(): string {
+    return this._isFullscreen ? mdiArrowCollapse : mdiArrowExpand;
+  }
+
+  private _createEditorToolbar(): HaIconButtonToolbar {
+    // Create the editor toolbar element
+    const editorToolbar = document.createElement("ha-icon-button-toolbar");
+    editorToolbar.classList.add("code-editor-toolbar");
+    editorToolbar.items = [];
+    return editorToolbar;
+  }
+
+  private _updateToolbar() {
+    // Show/Hide the toolbar if we have one.
+    this.classList.toggle("hasToolbar", this.hasToolbar);
+
+    // Update fullscreen state. Handles toolbar and fullscreen mode being disabled.
+    this._updateFullscreenState();
+
+    // If we don't have a toolbar, nothing to update
+    if (!this.hasToolbar) {
       return;
     }
 
-    // Create button if it doesn't exist
-    if (!existingButton) {
-      const button = document.createElement("ha-icon-button");
-      (button as any).path = this._isFullscreen
-        ? mdiArrowCollapse
-        : mdiArrowExpand;
-      button.setAttribute(
-        "label",
-        this._isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
-      );
-      button.classList.add("fullscreen-button");
-      // Use bound method to ensure proper this context
-      button.addEventListener("click", this._handleFullscreenClick);
-      this.renderRoot.appendChild(button);
-    } else {
-      // Update existing button
-      (existingButton as any).path = this._isFullscreen
-        ? mdiArrowCollapse
-        : mdiArrowExpand;
-      existingButton.setAttribute(
-        "label",
-        this._isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
-      );
+    // If we don't yet have the toolbar, create it.
+    if (!this._editorToolbar) {
+      this._editorToolbar = this._createEditorToolbar();
     }
+
+    // Ensure all toolbar buttons are correctly configured.
+    this._updateToolbarButtons();
+
+    // Render the toolbar. This must be placed as a child of the code
+    // mirror element to ensure it doesn't affect the positioning and
+    // size of codemirror.
+    this.codemirror?.dom.appendChild(this._editorToolbar);
   }
+
+  private _updateToolbarButtons() {
+    // Re-render all toolbar items.
+    if (!this._editorToolbar) {
+      return;
+    }
+
+    this._editorToolbar.items = [
+      ...(this.hasTest && !this._isFullscreen
+        ? [
+            {
+              id: "test",
+              label:
+                this.hass?.localize(
+                  `ui.components.yaml-editor.test_${this.testing ? "off" : "on"}`
+                ) || "Test",
+              path: this.testing ? mdiBugOutline : mdiBug,
+              action: (e: Event) => this._handleTestClick(e),
+            },
+          ]
+        : []),
+      {
+        id: "undo",
+        disabled: !this._canUndo,
+        label: this.hass?.localize("ui.common.undo") || "Undo",
+        path: mdiUndo,
+        action: (e: Event) => this._handleUndoClick(e),
+      },
+      {
+        id: "redo",
+        disabled: !this._canRedo,
+        label: this.hass?.localize("ui.common.redo") || "Redo",
+        path: mdiRedo,
+        action: (e: Event) => this._handleRedoClick(e),
+      },
+      {
+        id: "copy",
+        disabled: !this._canCopy,
+        label:
+          this.hass?.localize("ui.components.yaml-editor.copy_to_clipboard") ||
+          "Copy to Clipboard",
+        path: mdiContentCopy,
+        action: (e: Event) => this._handleClipboardClick(e),
+      },
+      {
+        id: "find-replace",
+        label:
+          this.hass?.localize("ui.components.yaml-editor.find_and_replace") ||
+          "Find and replace",
+        path: mdiFindReplace,
+        action: (e: Event) => this._handleFindReplaceClick(e),
+      },
+      {
+        id: "fullscreen",
+        disabled: this.disableFullscreen,
+        label: this._fullscreenLabel(),
+        path: this._fullscreenIcon(),
+        action: (e: Event) => this._handleFullscreenClick(e),
+      },
+    ];
+  }
+
+  private _updateFullscreenState(
+    fullscreen: boolean = this._isFullscreen
+  ): boolean {
+    const previousFullscreen = this._isFullscreen;
+
+    this.classList.toggle("in-dialog", this.inDialog);
+
+    // Update the current fullscreen state based on selected value. If fullscreen
+    // is disabled, or we have no toolbar, ensure we are not in fullscreen mode.
+    this._isFullscreen =
+      fullscreen && !this.disableFullscreen && this.hasToolbar;
+
+    if (previousFullscreen !== this._isFullscreen) {
+      fireEvent(this, "dialog-set-fullscreen", this._isFullscreen);
+    }
+
+    // Return whether successfully in requested state
+    return this._isFullscreen === fullscreen;
+  }
+
+  private _handleClipboardClick = async (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.value) {
+      await copyToClipboard(this.value);
+      showToast(this, {
+        message:
+          this.hass?.localize("ui.common.copied_clipboard") ||
+          "Copied to clipboard",
+      });
+    }
+  };
+
+  private _handleTestClick = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.codemirror) {
+      return;
+    }
+    fireEvent(this, "test-toggle");
+  };
+
+  private _handleUndoClick = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.codemirror) {
+      return;
+    }
+    undo(this.codemirror);
+  };
+
+  private _handleRedoClick = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.codemirror) {
+      return;
+    }
+    redo(this.codemirror);
+  };
 
   private _handleFullscreenClick = (e: Event) => {
     e.preventDefault();
     e.stopPropagation();
-    this._toggleFullscreen();
+    this._updateFullscreenState(!this._isFullscreen);
   };
 
-  private _toggleFullscreen() {
-    this._isFullscreen = !this._isFullscreen;
-    this._updateFullscreenButton();
-  }
+  private _handleFindReplaceClick = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.codemirror || !this._loadedCodeMirror) {
+      return;
+    }
+    // Toggle search panel: close if open, open if closed
+    const searchPanel = this.codemirror.dom.querySelector(".cm-search");
+    if (searchPanel) {
+      this._loadedCodeMirror.closeSearchPanel(this.codemirror);
+    } else {
+      this._loadedCodeMirror.openSearchPanel(this.codemirror);
+    }
+  };
 
   private _handleKeyDown = (e: KeyboardEvent) => {
-    if (this._isFullscreen && e.key === "Escape") {
+    if (
+      (e.key === "Escape" &&
+        this._isFullscreen &&
+        this._updateFullscreenState(false)) ||
+      (e.key === "F11" && this._updateFullscreenState(true))
+    ) {
+      // If we successfully performed the action, stop it propagating further.
       e.preventDefault();
       e.stopPropagation();
-      this._toggleFullscreen();
-    } else if (e.key === "F11" && !this.disableFullscreen) {
-      e.preventDefault();
-      e.stopPropagation();
-      this._toggleFullscreen();
     }
   };
 
@@ -390,6 +620,157 @@ export class HaCodeEditor extends ReactiveElement {
     return completionInfo;
   };
 
+  private _getCompletionInfo = (
+    completion: Completion
+  ): CompletionInfo | Promise<CompletionInfo> | null => {
+    if (this.hass && completion.label in this.hass.states) {
+      return this._renderInfo(completion);
+    }
+
+    if (completion.label.startsWith("mdi:")) {
+      return renderIcon(completion);
+    }
+
+    return null;
+  };
+
+  private _ensureCompletionInfoPopover(): WaPopup {
+    if (!this._completionInfoPopover) {
+      this._completionInfoPopover = document.createElement(
+        "wa-popup"
+      ) as WaPopup;
+      this._completionInfoPopover.classList.add("completion-info-popover");
+      this._completionInfoPopover.placement = "right-start";
+      this._completionInfoPopover.distance = 4;
+      this._completionInfoPopover.flip = true;
+      this._completionInfoPopover.flipFallbackPlacements =
+        "left-start bottom-start top-start";
+      this._completionInfoPopover.shift = true;
+      this._completionInfoPopover.shiftPadding = 8;
+      this._completionInfoPopover.autoSize = "both";
+      this._completionInfoPopover.autoSizePadding = 8;
+
+      this._completionInfoContainer = document.createElement("div");
+      this._completionInfoPopover.appendChild(this._completionInfoContainer);
+      this.renderRoot.appendChild(this._completionInfoPopover);
+    }
+
+    return this._completionInfoPopover;
+  }
+
+  private _clearCompletionInfo() {
+    this._completionInfoRequest += 1;
+    this._completionInfoKey = undefined;
+    this._completionInfoDestroy?.();
+    this._completionInfoDestroy = undefined;
+    this._completionInfoContainer?.replaceChildren();
+
+    if (this._completionInfoPopover?.active) {
+      this._completionInfoPopover.active = false;
+    }
+  }
+
+  private _renderCompletionInfoContent(info: CompletionInfo) {
+    this._completionInfoDestroy?.();
+    this._completionInfoDestroy = undefined;
+
+    if (!this._completionInfoContainer) {
+      return;
+    }
+
+    if (info === null) {
+      this._completionInfoContainer.replaceChildren();
+      return;
+    }
+
+    if ("nodeType" in info) {
+      this._completionInfoContainer.replaceChildren(info);
+      return;
+    }
+
+    this._completionInfoContainer.replaceChildren(info.dom);
+    this._completionInfoDestroy = info.destroy;
+  }
+
+  private _syncCompletionInfoPopover = () => {
+    if (this._completionInfoFrame !== undefined) {
+      cancelAnimationFrame(this._completionInfoFrame);
+    }
+
+    this._completionInfoFrame = requestAnimationFrame(() => {
+      this._completionInfoFrame = undefined;
+      this._syncCompletionInfoPopoverNow();
+    });
+  };
+
+  private _syncCompletionInfoPopoverNow = () => {
+    if (!this.codemirror || !this._loadedCodeMirror) {
+      return;
+    }
+
+    if (window.matchMedia("(max-width: 600px)").matches) {
+      this._clearCompletionInfo();
+      return;
+    }
+
+    const completion = this._loadedCodeMirror.selectedCompletion(
+      this.codemirror.state
+    );
+    const selectedOption = this.codemirror.dom.querySelector(
+      ".cm-tooltip-autocomplete li[aria-selected]"
+    ) as HTMLElement | null;
+
+    if (!completion || !selectedOption) {
+      this._clearCompletionInfo();
+      return;
+    }
+
+    const infoResult = this._getCompletionInfo(completion);
+
+    if (!infoResult) {
+      this._clearCompletionInfo();
+      return;
+    }
+
+    const requestId = ++this._completionInfoRequest;
+    const infoKey = completion.label;
+    const popover = this._ensureCompletionInfoPopover();
+    popover.anchor = selectedOption;
+
+    const showPopover = async (info: CompletionInfo) => {
+      if (requestId !== this._completionInfoRequest) {
+        if (info && typeof info === "object" && "destroy" in info) {
+          info.destroy?.();
+        }
+        return;
+      }
+
+      if (infoKey !== this._completionInfoKey) {
+        this._renderCompletionInfoContent(info);
+        this._completionInfoKey = infoKey;
+      }
+
+      await popover.updateComplete;
+      popover.active = true;
+      popover.reposition();
+    };
+
+    if ("then" in infoResult) {
+      infoResult.then(showPopover).catch(() => {
+        if (requestId === this._completionInfoRequest) {
+          this._clearCompletionInfo();
+        }
+      });
+      return;
+    }
+
+    showPopover(infoResult).catch(() => {
+      if (requestId === this._completionInfoRequest) {
+        this._clearCompletionInfo();
+      }
+    });
+  };
+
   private _getStates = memoizeOne((states: HassEntities): Completion[] => {
     if (!states) {
       return [];
@@ -399,7 +780,6 @@ export class HaCodeEditor extends ReactiveElement {
       type: "variable",
       label: key,
       detail: states[key].attributes.friendly_name,
-      info: this._renderInfo,
     }));
 
     return options;
@@ -525,6 +905,18 @@ export class HaCodeEditor extends ReactiveElement {
           }
         }
       }
+
+      // Properties that should never suggest entities
+      const negativeProperties = ["action"];
+
+      // Create regex pattern for negative properties
+      const negativePropertyPattern = negativeProperties.join("|");
+      const negativeEntityFieldRegex = new RegExp(
+        `^\\s*(-\\s+)?(${negativePropertyPattern}):\\s*`
+      );
+      if (lineText.match(negativeEntityFieldRegex)) {
+        return null;
+      }
     }
 
     // Original entity completion logic for non-YAML or when not in entity_id field
@@ -552,21 +944,15 @@ export class HaCodeEditor extends ReactiveElement {
 
   private _getIconItems = async (): Promise<Completion[]> => {
     if (!this._iconList) {
-      let iconList: {
+      const iconList: {
         name: string;
         keywords: string[];
-      }[];
-      if (__SUPERVISOR__) {
-        iconList = [];
-      } else {
-        iconList = (await import("../../build/mdi/iconList.json")).default;
-      }
+      }[] = (await import("../../build/mdi/iconList.json")).default;
 
       this._iconList = iconList.map((icon) => ({
         type: "variable",
         label: `mdi:${icon.name}`,
         detail: icon.keywords.join(", "),
-        info: renderIcon,
       }));
     }
 
@@ -592,10 +978,14 @@ export class HaCodeEditor extends ReactiveElement {
   }
 
   private _onUpdate = (update: ViewUpdate): void => {
+    this._canUndo = !this.readOnly && undoDepth(update.state) > 0;
+    this._canRedo = !this.readOnly && redoDepth(update.state) > 0;
+    this._syncCompletionInfoPopover();
     if (!update.docChanged) {
       return;
     }
     this._value = update.state.doc.toString();
+    this._canCopy = this._value?.length > 0;
     fireEvent(this, "value-changed", { value: this._value });
   };
 
@@ -610,93 +1000,138 @@ export class HaCodeEditor extends ReactiveElement {
     return [];
   };
 
-  static styles = css`
-    :host {
-      position: relative;
-      display: block;
-    }
+  static get styles(): CSSResultGroup {
+    return [
+      haStyleScrollbar,
+      css`
+        :host {
+          position: relative;
+          display: block;
+          --code-editor-toolbar-height: 28px;
+        }
 
-    :host(.error-state) .cm-gutters {
-      border-color: var(--error-state-color, red);
-    }
+        :host(.error-state) .cm-gutters {
+          border-color: var(--error-state-color, var(--error-color)) !important;
+        }
 
-    .fullscreen-button {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      z-index: 1;
-      color: var(--secondary-text-color);
-      background-color: var(--secondary-background-color);
-      border-radius: 50%;
-      opacity: 0.9;
-      transition: opacity 0.2s;
-      --mdc-icon-button-size: 32px;
-      --mdc-icon-size: 18px;
-      /* Ensure button is clickable on iOS */
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
+        :host(.hasToolbar) .cm-gutters {
+          padding-top: 0;
+        }
 
-    .fullscreen-button:hover,
-    .fullscreen-button:active {
-      opacity: 1;
-    }
+        :host(.hasToolbar) .cm-focused .cm-gutters {
+          padding-top: 1px;
+        }
 
-    @media (hover: none) {
-      .fullscreen-button {
-        opacity: 0.8;
-      }
-    }
+        :host(.error-state) .cm-content {
+          border-color: var(--error-state-color, var(--error-color)) !important;
+        }
 
-    :host(.fullscreen) {
-      position: fixed !important;
-      top: calc(var(--header-height, 56px) + 8px) !important;
-      left: 8px !important;
-      right: 8px !important;
-      bottom: 8px !important;
-      z-index: 9999 !important;
-      border-radius: 12px !important;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
-      overflow: hidden !important;
-      background-color: var(
-        --code-editor-background-color,
-        var(--card-background-color)
-      ) !important;
-      margin: 0 !important;
-      padding-top: var(--safe-area-inset-top) !important;
-      padding-left: var(--safe-area-inset-left) !important;
-      padding-right: var(--safe-area-inset-right) !important;
-      padding-bottom: var(--safe-area-inset-bottom) !important;
-      box-sizing: border-box !important;
-      display: block !important;
-    }
+        :host(.hasToolbar) .cm-content {
+          border: none;
+          border-top: 1px solid var(--secondary-text-color);
+        }
 
-    :host(.fullscreen) .cm-editor {
-      height: 100% !important;
-      max-height: 100% !important;
-      border-radius: 0 !important;
-    }
+        :host(.hasToolbar) .cm-focused .cm-content {
+          border-top: 2px solid var(--primary-color);
+          padding-top: 15px;
+        }
 
-    :host(.fullscreen) .fullscreen-button {
-      top: calc(var(--safe-area-inset-top, 0px) + 8px);
-      right: calc(var(--safe-area-inset-right, 0px) + 8px);
-    }
+        :host(.fullscreen) {
+          position: fixed !important;
+          top: calc(var(--header-height, 56px) + var(--ha-space-2)) !important;
+          left: var(--ha-space-2) !important;
+          right: var(--ha-space-2) !important;
+          bottom: var(--ha-space-2) !important;
+          z-index: 6;
+          border-radius: var(--ha-border-radius-lg) !important;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
+          overflow: hidden !important;
+          background-color: var(
+            --code-editor-background-color,
+            var(--card-background-color)
+          ) !important;
+          margin: 0 !important;
+          padding-top: var(--safe-area-inset-top) !important;
+          padding-left: var(--safe-area-inset-left) !important;
+          padding-right: var(--safe-area-inset-right) !important;
+          padding-bottom: var(--safe-area-inset-bottom) !important;
+          box-sizing: border-box !important;
+          display: block !important;
+        }
 
-    .completion-info {
-      display: grid;
-      gap: 3px;
-      padding: 8px;
-    }
+        :host(.in-dialog.fullscreen) {
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
 
-    /* Hide completion info on narrow screens */
-    @media (max-width: 600px) {
-      .cm-completionInfo,
-      .completion-info {
-        display: none;
-      }
-    }
-  `;
+        :host(.hasToolbar) .cm-editor {
+          padding-top: var(--code-editor-toolbar-height);
+        }
+
+        :host(.fullscreen) .cm-editor {
+          height: 100% !important;
+          max-height: 100% !important;
+          border-radius: var(--ha-border-radius-square) !important;
+        }
+
+        :host(:not(.hasToolbar)) .code-editor-toolbar {
+          display: none !important;
+        }
+
+        .code-editor-toolbar {
+          --icon-button-toolbar-height: var(--code-editor-toolbar-height);
+          --icon-button-toolbar-color: var(
+            --code-editor-gutter-color,
+            var(--secondary-background-color, whitesmoke)
+          );
+          border-top-left-radius: var(--ha-border-radius-sm);
+          border-top-right-radius: var(--ha-border-radius-sm);
+        }
+
+        .completion-info {
+          display: grid;
+          gap: 3px;
+          padding: 8px;
+        }
+
+        wa-popup.completion-info-popover {
+          --auto-size-available-width: min(
+            420px,
+            calc(var(--safe-width) - var(--ha-space-8))
+          );
+        }
+
+        wa-popup.completion-info-popover::part(popup) {
+          padding: 0;
+          color: var(--primary-text-color);
+          background-color: var(
+            --code-editor-background-color,
+            var(--card-background-color)
+          );
+          border: 1px solid var(--divider-color);
+          border-radius: var(--mdc-shape-medium, 4px);
+          box-shadow:
+            0px 5px 5px -3px rgb(0 0 0 / 20%),
+            0px 8px 10px 1px rgb(0 0 0 / 14%),
+            0px 3px 14px 2px rgb(0 0 0 / 12%);
+        }
+
+        /* Hide completion info on narrow screens */
+        @media (max-width: 600px) {
+          wa-popup.completion-info-popover,
+          .completion-info {
+            display: none;
+          }
+        }
+      `,
+    ];
+  }
 }
 
 declare global {

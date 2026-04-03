@@ -27,7 +27,7 @@ interface BackupStats {
 const TYPE_ICONS: Record<BackupType, string> = {
   automatic: mdiCalendarSync,
   manual: mdiGestureTap,
-  addon_update: mdiPuzzle,
+  app_update: mdiPuzzle,
 };
 
 const computeBackupStats = (backups: BackupContent[]): BackupStats =>
@@ -60,7 +60,7 @@ class HaBackupOverviewBackups extends LitElement {
   );
 
   render() {
-    const isHassio = isComponentLoaded(this.hass, "hassio");
+    const isHassio = isComponentLoaded(this.hass.config, "hassio");
     const stats = this._stats(this.backups, isHassio);
 
     return html`
@@ -117,7 +117,7 @@ class HaBackupOverviewBackups extends LitElement {
           padding: 28px 20px 0;
           max-width: 690px;
           margin: 0 auto;
-          gap: 24px;
+          gap: var(--ha-space-6);
           display: flex;
           flex-direction: column;
           margin-bottom: calc(72px + var(--safe-area-inset-bottom));

@@ -1,10 +1,9 @@
-import { framework } from "./cast_framework";
 import { CAST_NS } from "../../../src/cast/const";
 import type { HassMessage } from "../../../src/cast/receiver_messages";
 import "../../../src/resources/custom-card-support";
 import { castContext } from "./cast_context";
+import { framework } from "./cast_framework";
 import { HcMain } from "./layout/hc-main";
-import type { ReceivedMessage } from "./types";
 
 const lovelaceController = new HcMain();
 document.body.append(lovelaceController);
@@ -90,24 +89,25 @@ const showMediaPlayer = () => {
 const options = new framework.CastReceiverOptions();
 options.disableIdleTimeout = true;
 options.customNamespaces = {
-  [CAST_NS]: "json" as framework.system.MessageType.JSON,
+  // type definition is wrong, should be "JSON" instead of "json"
+  // https://developers.google.com/cast/docs/reference/web_receiver/cast.framework.system#.MessageType
+  [CAST_NS]: "JSON" as framework.system.MessageType.JSON,
 };
 
-castContext.addCustomMessageListener(
-  CAST_NS,
-  // @ts-ignore
-  (ev: ReceivedMessage<HassMessage>) => {
-    // We received a show Lovelace command, stop media from playing, hide media player and show Lovelace controller
-    if (playerManager.getPlayerState() !== "IDLE") {
-      playerManager.stop();
-    } else {
-      showLovelaceController();
-    }
-    const msg = ev.data;
-    msg.senderId = ev.senderId;
-    lovelaceController.processIncomingMessage(msg);
+castContext.addCustomMessageListener(CAST_NS, (ev) => {
+  // We received a show Lovelace command, stop media from playing, hide media player and show Lovelace controller
+  if (
+    playerManager.getPlayerState() !==
+    ("IDLE" as framework.messages.PlayerState.IDLE)
+  ) {
+    playerManager.stop();
+  } else {
+    showLovelaceController();
   }
-);
+  const msg = ev.data as HassMessage;
+  msg.senderId = ev.senderId;
+  lovelaceController.processIncomingMessage(msg);
+});
 
 const playerManager = castContext.getPlayerManager();
 
@@ -128,9 +128,10 @@ playerManager.setMessageInterceptor(
       media.contentId = media.entity;
       media.streamType = "LIVE" as framework.messages.StreamType.LIVE;
       media.contentType = "application/vnd.apple.mpegurl";
-      // @ts-ignore
+      // type definition is wrong, should be "FMP4" instead of "fmp4"
+      // https://developers.google.com/cast/docs/reference/web_receiver/cast.framework.messages#.HlsVideoSegmentFormat
       media.hlsVideoSegmentFormat =
-        "fmp4" as framework.messages.HlsVideoSegmentFormat.FMP4;
+        "FMP4" as framework.messages.HlsVideoSegmentFormat.FMP4;
     }
     return loadRequestData;
   }
@@ -140,9 +141,11 @@ playerManager.addEventListener(
   "MEDIA_STATUS" as framework.events.EventType.MEDIA_STATUS,
   (event) => {
     if (
-      event.mediaStatus?.playerState === "IDLE" &&
+      event.mediaStatus?.playerState ===
+        ("IDLE" as framework.messages.PlayerState.IDLE) &&
       event.mediaStatus?.idleReason &&
-      event.mediaStatus?.idleReason !== "INTERRUPTED"
+      event.mediaStatus?.idleReason !==
+        ("INTERRUPTED" as framework.messages.IdleReason.INTERRUPTED)
     ) {
       // media finished or stopped, return to default Lovelace
       showLovelaceController();

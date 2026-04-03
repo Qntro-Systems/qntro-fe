@@ -11,25 +11,25 @@ import { computeDomain } from "../../common/entity/compute_domain";
 import { navigate } from "../../common/navigate";
 import "../../components/ha-area-picker";
 import "../../components/ha-button";
+import "../../components/input/ha-input";
+import type { HaInput } from "../../components/input/ha-input";
 import { assistSatelliteSupportsSetupFlow } from "../../data/assist_satellite";
+import { getConfigEntries } from "../../data/config_entries";
 import type { DataEntryFlowStepCreateEntry } from "../../data/data_entry_flow";
-import type { DeviceRegistryEntry } from "../../data/device_registry";
-import { updateDeviceRegistryEntry } from "../../data/device_registry";
+import type { DeviceRegistryEntry } from "../../data/device/device_registry";
+import { updateDeviceRegistryEntry } from "../../data/device/device_registry";
 import {
   getAutomaticEntityIds,
   updateEntityRegistryEntry,
   type EntityRegistryDisplayEntry,
-} from "../../data/entity_registry";
+} from "../../data/entity/entity_registry";
 import { domainToName } from "../../data/integration";
-import type { HomeAssistant } from "../../types";
+import type { HomeAssistant, ValueChangedEvent } from "../../types";
 import { brandsUrl } from "../../util/brands-url";
 import { showAlertDialog } from "../generic/show-dialog-box";
 import { showVoiceAssistantSetupDialog } from "../voice-assistant-setup/show-voice-assistant-setup-dialog";
 import type { FlowConfig } from "./show-dialog-data-entry-flow";
 import { configFlowContentStyles } from "./styles";
-import { showConfigFlowDialog } from "./show-dialog-config-flow";
-import { showOptionsFlowDialog } from "./show-dialog-options-flow";
-import { showSubConfigFlowDialog } from "./show-dialog-sub-config-flow";
 
 @customElement("step-flow-create-entry")
 class StepFlowCreateEntry extends LitElement {
@@ -40,6 +40,8 @@ class StepFlowCreateEntry extends LitElement {
   @property({ attribute: false }) public step!: DataEntryFlowStepCreateEntry;
 
   @property({ attribute: false }) public devices!: DeviceRegistryEntry[];
+
+  private _domains: Record<string, string> = {};
 
   public navigateToResult = false;
 
@@ -61,13 +63,13 @@ class StepFlowCreateEntry extends LitElement {
       )
   );
 
+  protected firstUpdated(changedProps: PropertyValues) {
+    super.firstUpdated(changedProps);
+    this._loadDomains();
+  }
+
   protected willUpdate(changedProps: PropertyValues) {
     if (!changedProps.has("devices") && !changedProps.has("hass")) {
-      return;
-    }
-
-    if (this.step.next_flow && this.devices.length === 0) {
-      this._flowDone();
       return;
     }
 
@@ -100,6 +102,12 @@ class StepFlowCreateEntry extends LitElement {
 
   protected render(): TemplateResult {
     const localize = this.hass.localize;
+    const domains = this.step.result
+      ? {
+          ...this._domains,
+          [this.step.result.entry_id]: this.step.result.domain,
+        }
+      : this._domains;
     return html`
       <div class="content">
         ${this.flowConfig.renderCreateEntryDescription(this.hass, this.step)}
@@ -126,18 +134,23 @@ class StepFlowCreateEntry extends LitElement {
                     (device) => html`
                       <div class="device">
                         <div class="device-info">
-                          ${this.step.result?.domain
+                          ${device.primary_config_entry &&
+                          domains[device.primary_config_entry]
                             ? html`<img
                                 slot="graphic"
                                 alt=${domainToName(
                                   this.hass.localize,
-                                  this.step.result.domain
+                                  domains[device.primary_config_entry]
                                 )}
-                                src=${brandsUrl({
-                                  domain: this.step.result.domain,
-                                  type: "icon",
-                                  darkOptimized: this.hass.themes?.darkMode,
-                                })}
+                                src=${brandsUrl(
+                                  {
+                                    domain:
+                                      domains[device.primary_config_entry],
+                                    type: "icon",
+                                    darkOptimized: this.hass.themes?.darkMode,
+                                  },
+                                  this.hass.auth.data.hassUrl
+                                )}
                                 crossorigin="anonymous"
                                 referrerpolicy="no-referrer"
                               />`
@@ -151,19 +164,20 @@ class StepFlowCreateEntry extends LitElement {
                               : nothing}
                           </div>
                         </div>
-                        <ha-textfield
+                        <ha-input
                           .label=${localize(
                             "ui.panel.config.integrations.config_flow.device_name"
                           )}
                           .placeholder=${computeDeviceNameDisplay(
                             device,
-                            this.hass
+                            this.hass.localize,
+                            this.hass.states
                           )}
                           .value=${this._deviceUpdate[device.id]?.name ??
                           computeDeviceName(device)}
                           @change=${this._deviceNameChanged}
                           .device=${device.id}
-                        ></ha-textfield>
+                        ></ha-input>
                         <ha-area-picker
                           .hass=${this.hass}
                           .device=${device.id}
@@ -182,16 +196,21 @@ class StepFlowCreateEntry extends LitElement {
         <ha-button @click=${this._flowDone}
           >${localize(
             `ui.panel.config.integrations.config_flow.${
-              this.step.next_flow
-                ? "next"
-                : !this.devices.length || Object.keys(this._deviceUpdate).length
-                  ? "finish"
-                  : "finish_skip"
+              !this.devices.length || Object.keys(this._deviceUpdate).length
+                ? "finish"
+                : "finish_skip"
             }`
           )}</ha-button
         >
       </div>
     `;
+  }
+
+  private async _loadDomains() {
+    const entries = await getConfigEntries(this.hass);
+    this._domains = Object.fromEntries(
+      entries.map((entry) => [entry.entry_id, entry.domain])
+    );
   }
 
   private async _flowDone(): Promise<void> {
@@ -251,37 +270,7 @@ class StepFlowCreateEntry extends LitElement {
     }
 
     fireEvent(this, "flow-update", { step: undefined });
-    if (this.step.next_flow) {
-      // start the next flow
-      if (this.step.next_flow[0] === "config_flow") {
-        showConfigFlowDialog(this, {
-          continueFlowId: this.step.next_flow[1],
-          navigateToResult: this.navigateToResult,
-        });
-      } else if (this.step.next_flow[0] === "options_flow") {
-        showOptionsFlowDialog(this, this.step.result!, {
-          continueFlowId: this.step.next_flow[1],
-          navigateToResult: this.navigateToResult,
-        });
-      } else if (this.step.next_flow[0] === "config_subentries_flow") {
-        showSubConfigFlowDialog(
-          this,
-          this.step.result!,
-          this.step.next_flow[0],
-          {
-            continueFlowId: this.step.next_flow[1],
-            navigateToResult: this.navigateToResult,
-          }
-        );
-      } else {
-        showAlertDialog(this, {
-          text: this.hass.localize(
-            "ui.panel.config.integrations.config_flow.error",
-            { error: `Unsupported next flow type: ${this.step.next_flow[0]}` }
-          ),
-        });
-      }
-    } else if (this.step.result && this.navigateToResult) {
+    if (this.step.result && this.navigateToResult) {
       if (this.devices.length === 1) {
         navigate(`/config/devices/device/${this.devices[0].id}`);
       } else {
@@ -292,7 +281,7 @@ class StepFlowCreateEntry extends LitElement {
     }
   }
 
-  private async _areaPicked(ev: CustomEvent) {
+  private async _areaPicked(ev: ValueChangedEvent<string>) {
     const picker = ev.currentTarget as any;
     const device = picker.device;
     const area = ev.detail.value;
@@ -304,9 +293,9 @@ class StepFlowCreateEntry extends LitElement {
     this.requestUpdate("_deviceUpdate");
   }
 
-  private _deviceNameChanged(ev): void {
-    const picker = ev.currentTarget as any;
-    const device = picker.device;
+  private _deviceNameChanged(ev: InputEvent): void {
+    const picker = ev.currentTarget as HaInput;
+    const device = (picker as any).device;
     const name = picker.value;
 
     if (!(device in this._deviceUpdate)) {
@@ -336,14 +325,14 @@ class StepFlowCreateEntry extends LitElement {
         .device {
           border: 1px solid var(--divider-color);
           padding: 6px;
-          border-radius: 4px;
+          border-radius: var(--ha-border-radius-sm);
           margin: 4px;
           display: inline-block;
         }
         .device-info {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: var(--ha-space-2);
         }
         .device-info img {
           width: 40px;
@@ -357,12 +346,11 @@ class StepFlowCreateEntry extends LitElement {
         .secondary {
           color: var(--secondary-text-color);
         }
-        ha-textfield,
         ha-area-picker {
           display: block;
         }
-        ha-textfield {
-          margin: 8px 0;
+        ha-input {
+          margin: var(--ha-space-2) 0;
         }
         .buttons > *:last-child {
           margin-left: auto;

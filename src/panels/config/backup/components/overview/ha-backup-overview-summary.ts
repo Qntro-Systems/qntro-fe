@@ -1,4 +1,4 @@
-import { mdiBackupRestore, mdiCalendar, mdiInformation } from "@mdi/js";
+import { mdiBackupRestore, mdiCalendar, mdiInformationOutline } from "@mdi/js";
 import { addHours, differenceInDays, isToday, isTomorrow } from "date-fns";
 import type { CSSResultGroup } from "lit";
 import { css, html, LitElement, nothing } from "lit";
@@ -58,7 +58,7 @@ class HaBackupOverviewBackups extends LitElement {
 
   private _renderSummaryCard(
     heading: string,
-    status: "error" | "info" | "warning" | "loading" | "success",
+    status: "error" | "info" | "warning" | "loading" | "success" | "none",
     headline: string | null,
     description?: string | null,
     lastCompletedDate?: Date
@@ -87,7 +87,7 @@ class HaBackupOverviewBackups extends LitElement {
                       @click=${this._createAdditionalBackupDescription(
                         lastCompletedDate
                       )}
-                      .path=${mdiInformation}
+                      .path=${mdiInformationOutline}
                     ></ha-icon-button>`
                   : nothing}
               </ha-md-list-item>`
@@ -103,7 +103,7 @@ class HaBackupOverviewBackups extends LitElement {
     if (this.fetching) {
       return this._renderSummaryCard(
         this.hass.localize("ui.panel.config.backup.overview.summary.loading"),
-        "loading",
+        "none",
         null,
         null
       );
@@ -334,7 +334,7 @@ class HaBackupOverviewBackups extends LitElement {
           display: flex;
           flex-direction: row;
           align-items: center;
-          gap: 16px;
+          gap: var(--ha-space-4);
         }
         p {
           margin: 0;
@@ -364,7 +364,7 @@ class HaBackupOverviewBackups extends LitElement {
           animation-name: loading;
           animation-timing-function: linear;
           animation-duration: 1.2s;
-          border-radius: 4px;
+          border-radius: var(--ha-border-radius-sm);
           height: 16px;
           margin: 2px 0;
           background: linear-gradient(

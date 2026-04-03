@@ -20,9 +20,11 @@ import type {
 import type {
   LovelaceCard,
   LovelaceCardEditor,
+  LovelaceGridOptions,
   LovelaceHeaderFooter,
 } from "../types";
 import type { EntitiesCardConfig } from "./types";
+import { haStyleScrollbar } from "../../../resources/styles";
 
 export const computeShowHeaderToggle = <
   T extends EntityConfig | LovelaceRowConfig,
@@ -83,6 +85,21 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
 
   private _footerElement?: LovelaceHeaderFooter;
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.addEventListener("row-visibility-changed", (ev) =>
+      this._updateRowVisibility(ev)
+    );
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.removeEventListener(
+      "row-visibility-changed",
+      this._updateRowVisibility
+    );
+  }
+
   set hass(hass: HomeAssistant) {
     this._hass = hass;
     this.shadowRoot
@@ -122,6 +139,14 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
     }
 
     return size;
+  }
+
+  public getGridOptions(): LovelaceGridOptions {
+    return {
+      columns: 12,
+      rows: "auto",
+      min_columns: 3,
+    };
   }
 
   public setConfig(config: EntitiesCardConfig): void {
@@ -218,7 +243,7 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
                     `}
               </h1>
             `}
-        <div id="states" class="card-content">
+        <div id="states" class="card-content ha-scrollbar">
           ${this._configEntities!.map((entityConf) =>
             this._renderEntity(entityConf)
           )}
@@ -231,66 +256,76 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
     `;
   }
 
-  static styles = css`
-    ha-card {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-    }
+  static styles = [
+    haStyleScrollbar,
+    css`
+      ha-card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+      }
 
-    .card-header .name {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+      .card-header .name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-    #states {
-      flex: 1;
-    }
+      #states {
+        flex: 1;
+        min-height: 0;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: var(--entities-card-row-gap, var(--card-row-gap, 8px));
+      }
 
-    #states > * {
-      margin: 8px 0;
-    }
+      #states > div > * {
+        overflow: clip visible;
+      }
 
-    #states > *:first-child {
-      margin-top: 0;
-    }
+      #states > div {
+        position: relative;
+      }
 
-    #states > *:last-child {
-      margin-bottom: 0;
-    }
+      .icon {
+        padding: 0px 18px 0px 8px;
+      }
 
-    #states > div > * {
-      overflow: clip visible;
-    }
+      .header {
+        border-top-left-radius: var(
+          --ha-card-border-radius,
+          var(--ha-border-radius-lg)
+        );
+        border-top-right-radius: var(
+          --ha-card-border-radius,
+          var(--ha-border-radius-lg)
+        );
+        overflow: hidden;
+      }
+      .header:not(:has(> hui-buttons-header-footer)) {
+        margin-bottom: var(--ha-space-4);
+      }
 
-    #states > div {
-      position: relative;
-    }
-
-    .icon {
-      padding: 0px 18px 0px 8px;
-    }
-
-    .header {
-      border-top-left-radius: var(--ha-card-border-radius, 12px);
-      border-top-right-radius: var(--ha-card-border-radius, 12px);
-      margin-bottom: 16px;
-      overflow: hidden;
-    }
-
-    .footer {
-      border-bottom-left-radius: var(--ha-card-border-radius, 12px);
-      border-bottom-right-radius: var(--ha-card-border-radius, 12px);
-      margin-top: -16px;
-      overflow: hidden;
-    }
-  `;
+      .footer {
+        border-bottom-left-radius: var(
+          --ha-card-border-radius,
+          var(--ha-border-radius-lg)
+        );
+        border-bottom-right-radius: var(
+          --ha-card-border-radius,
+          var(--ha-border-radius-lg)
+        );
+        margin-top: -16px;
+        overflow: hidden;
+      }
+    `,
+  ];
 
   private _renderEntity(entityConf: LovelaceRowConfig): TemplateResult {
     const element = createRowElement(
@@ -308,8 +343,16 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
       element.hass = this._hass;
     }
 
-    return html`<div>${element}</div>`;
+    return html`<div ?hidden=${element.hidden}>${element}</div>`;
   }
+
+  private _updateRowVisibility = (ev) => {
+    if (ev.detail?.value === false) {
+      ev.detail?.row?.parentElement!.style.setProperty("display", "none");
+    } else {
+      ev.detail?.row?.parentElement!.style.setProperty("display", "");
+    }
+  };
 }
 
 declare global {

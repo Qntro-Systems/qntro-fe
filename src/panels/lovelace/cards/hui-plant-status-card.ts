@@ -11,7 +11,6 @@ import { customElement, property, state } from "lit/decorators";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
 import { fireEvent } from "../../../common/dom/fire_event";
 import { batteryLevelIcon } from "../../../common/entity/battery_icon";
-import { computeStateName } from "../../../common/entity/compute_state_name";
 import "../../../components/ha-card";
 import "../../../components/ha-svg-icon";
 import type { HomeAssistant } from "../../../types";
@@ -119,7 +118,7 @@ class HuiPlantStatusCard extends LitElement implements LovelaceCard {
           style="background-image:url(${stateObj.attributes.entity_picture})"
         >
           <div class="header">
-            ${this._config.name || computeStateName(stateObj)}
+            ${this.hass.formatEntityName(stateObj, this._config.name)}
           </div>
         </div>
         <div class="content">
@@ -146,7 +145,7 @@ class HuiPlantStatusCard extends LitElement implements LovelaceCard {
                     ? ""
                     : "problem"}
                 >
-                  ${stateObj.attributes[item]}
+                  ${this._formatSensorValue(stateObj, item)}
                 </div>
                 <div class="uom">
                   ${stateObj.attributes.unit_of_measurement_dict[item] || ""}
@@ -223,7 +222,7 @@ class HuiPlantStatusCard extends LitElement implements LovelaceCard {
     .attributes:focus {
       outline: none;
       background: var(--divider-color);
-      border-radius: 100%;
+      border-radius: var(--ha-border-radius-pill);
     }
 
     .attributes div {
@@ -239,6 +238,20 @@ class HuiPlantStatusCard extends LitElement implements LovelaceCard {
       color: var(--secondary-text-color);
     }
   `;
+
+  private _formatSensorValue(stateObj: HassEntity, attribute: string): string {
+    const sensorEntityId = stateObj.attributes.sensors?.[attribute];
+    const sensorStateObj = sensorEntityId
+      ? this.hass!.states[sensorEntityId]
+      : undefined;
+    if (sensorStateObj) {
+      return this.hass!.formatEntityStateToParts(sensorStateObj)
+        .filter((part) => part.type !== "unit")
+        .map((part) => part.value)
+        .join("");
+    }
+    return stateObj.attributes[attribute] ?? "";
+  }
 
   private _computeAttributes(stateObj: HassEntity): string[] {
     return Object.keys(SENSOR_ICONS).filter(

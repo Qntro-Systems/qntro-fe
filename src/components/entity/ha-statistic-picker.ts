@@ -1,11 +1,12 @@
-import { mdiChartLine, mdiHelpCircle, mdiShape } from "@mdi/js";
-import type { ComboBoxLitRenderer } from "@vaadin/combo-box/lit";
+import type { RenderItemFunction } from "@lit-labs/virtualizer/virtualize";
+import { mdiChartLine, mdiHelpCircleOutline, mdiShape } from "@mdi/js";
 import type { HassEntity } from "home-assistant-js-websocket";
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { customElement, property, query } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { ensureArray } from "../../common/array/ensure-array";
 import { fireEvent } from "../../common/dom/fire_event";
+import { computeEntityNameList } from "../../common/entity/compute_entity_name_display";
 import { computeStateName } from "../../common/entity/compute_state_name";
 import { computeRTL } from "../../common/util/compute_rtl";
 import { domainToName } from "../../data/integration";
@@ -20,7 +21,6 @@ import "../ha-combo-box-item";
 import "../ha-generic-picker";
 import type { HaGenericPicker } from "../ha-generic-picker";
 import "../ha-icon-button";
-import "../ha-input-helper-text";
 import type {
   PickerComboBoxItem,
   PickerComboBoxSearchFn,
@@ -38,8 +38,20 @@ type StatisticItemType = "entity" | "external" | "no_state";
 interface StatisticComboBoxItem extends PickerComboBoxItem {
   statistic_id?: string;
   stateObj?: HassEntity;
+  domainName?: string;
   type?: StatisticItemType;
 }
+
+const SEARCH_KEYS = [
+  { name: "label", weight: 10 },
+  { name: "search_labels.entityName", weight: 10 },
+  { name: "search_labels.friendlyName", weight: 9 },
+  { name: "search_labels.deviceName", weight: 8 },
+  { name: "search_labels.areaName", weight: 6 },
+  { name: "search_labels.domainName", weight: 4 },
+  { name: "statisticId", weight: 3 },
+  { name: "id", weight: 2 },
+];
 
 @customElement("ha-statistic-picker")
 export class HaStatisticPicker extends LitElement {
@@ -66,7 +78,7 @@ export class HaStatisticPicker extends LitElement {
   @property({ type: Boolean, attribute: "allow-custom-entity" })
   public allowCustomEntity;
 
-  @property({ attribute: false, type: Array })
+  @property({ attribute: false })
   public statisticIds?: StatisticsMetaData[];
 
   @property({ attribute: false }) public helpMissingEntityUrl =
@@ -129,6 +141,7 @@ export class HaStatisticPicker extends LitElement {
 
   private async _getStatisticIds() {
     this.statisticIds = await getStatisticIds(this.hass, this.statisticTypes);
+    this._picker?.requestUpdate();
   }
 
   private _getItems = () =>
@@ -143,17 +156,15 @@ export class HaStatisticPicker extends LitElement {
       this.value
     );
 
-  private _getAdditionalItems(): StatisticComboBoxItem[] {
-    return [
-      {
-        id: MISSING_ID,
-        primary: this.hass.localize(
-          "ui.components.statistic-picker.missing_entity"
-        ),
-        icon_path: mdiHelpCircle,
-      },
-    ];
-  }
+  private _getAdditionalItems = (): StatisticComboBoxItem[] => [
+    {
+      id: MISSING_ID,
+      primary: this.hass.localize(
+        "ui.components.statistic-picker.missing_entity"
+      ),
+      icon_path: mdiHelpCircleOutline,
+    },
+  ];
 
   private _getStatisticsItems = memoizeOne(
     (
@@ -165,9 +176,9 @@ export class HaStatisticPicker extends LitElement {
       entitiesOnly?: boolean,
       excludeStatistics?: string[],
       value?: string
-    ): StatisticComboBoxItem[] => {
+    ): StatisticComboBoxItem[] | undefined => {
       if (!statisticIds) {
-        return [];
+        return undefined;
       }
 
       if (includeStatisticsUnitOfMeasurement) {
@@ -199,7 +210,7 @@ export class HaStatisticPicker extends LitElement {
         });
       }
 
-      const isRTL = computeRTL(this.hass);
+      const isRTL = computeRTL(hass);
 
       const output: StatisticComboBoxItem[] = [];
 
@@ -233,7 +244,6 @@ export class HaStatisticPicker extends LitElement {
                 ),
                 type,
                 sorting_label: [sortingPrefix, label].join("_"),
-                search_labels: [label, id],
                 icon_path: mdiShape,
               });
             } else if (type === "external") {
@@ -246,7 +256,7 @@ export class HaStatisticPicker extends LitElement {
                 secondary: domainName,
                 type,
                 sorting_label: [sortingPrefix, label].join("_"),
-                search_labels: [label, domainName, id],
+                search_labels: { label, domainName },
                 icon_path: mdiChartLine,
               });
             }
@@ -256,15 +266,20 @@ export class HaStatisticPicker extends LitElement {
         const id = meta.statistic_id;
 
         const friendlyName = computeStateName(stateObj); // Keep this for search
-        const entityName = hass.formatEntityName(stateObj, "entity");
-        const deviceName = hass.formatEntityName(stateObj, "device");
-        const areaName = hass.formatEntityName(stateObj, "area");
+
+        const [entityName, deviceName, areaName] = computeEntityNameList(
+          stateObj,
+          [{ type: "entity" }, { type: "device" }, { type: "area" }],
+          hass.entities,
+          hass.devices,
+          hass.areas,
+          hass.floors
+        );
 
         const primary = entityName || deviceName || id;
         const secondary = [areaName, entityName ? deviceName : undefined]
           .filter(Boolean)
           .join(isRTL ? " ◂ " : " ▸ ");
-        const a11yLabel = [deviceName, entityName].filter(Boolean).join(" - ");
 
         const sortingPrefix = `${TYPE_ORDER.indexOf("entity")}`;
         output.push({
@@ -272,17 +287,15 @@ export class HaStatisticPicker extends LitElement {
           statistic_id: id,
           primary,
           secondary,
-          a11y_label: a11yLabel,
           stateObj: stateObj,
           type: "entity",
           sorting_label: [sortingPrefix, deviceName, entityName].join("_"),
-          search_labels: [
-            entityName,
-            deviceName,
-            areaName,
+          search_labels: {
+            entityName: entityName || null,
+            deviceName: deviceName || null,
+            areaName: areaName || null,
             friendlyName,
-            id,
-          ].filter(Boolean) as string[],
+          },
         });
       });
 
@@ -331,9 +344,14 @@ export class HaStatisticPicker extends LitElement {
     const stateObj = this.hass.states[statisticId];
 
     if (stateObj) {
-      const entityName = this.hass.formatEntityName(stateObj, "entity");
-      const deviceName = this.hass.formatEntityName(stateObj, "device");
-      const areaName = this.hass.formatEntityName(stateObj, "area");
+      const [entityName, deviceName, areaName] = computeEntityNameList(
+        stateObj,
+        [{ type: "entity" }, { type: "device" }, { type: "area" }],
+        this.hass.entities,
+        this.hass.devices,
+        this.hass.areas,
+        this.hass.floors
+      );
 
       const isRTL = computeRTL(this.hass);
 
@@ -352,13 +370,13 @@ export class HaStatisticPicker extends LitElement {
         stateObj: stateObj,
         type: "entity",
         sorting_label: [sortingPrefix, deviceName, entityName].join("_"),
-        search_labels: [
-          entityName,
-          deviceName,
-          areaName,
+        search_labels: {
+          entityName: entityName || null,
+          deviceName: deviceName || null,
+          areaName: areaName || null,
           friendlyName,
           statisticId,
-        ].filter(Boolean) as string[],
+        },
       };
     }
 
@@ -385,7 +403,7 @@ export class HaStatisticPicker extends LitElement {
           secondary: domainName,
           type: "external",
           sorting_label: [sortingPrefix, label].join("_"),
-          search_labels: [label, domainName, statisticId],
+          search_labels: { label, domainName, statisticId },
           icon_path: mdiChartLine,
         };
       }
@@ -400,14 +418,14 @@ export class HaStatisticPicker extends LitElement {
       secondary: this.hass.localize("ui.components.statistic-picker.no_state"),
       type: "no_state",
       sorting_label: [sortingPrefix, label].join("_"),
-      search_labels: [label, statisticId],
+      search_labels: { label, statisticId },
       icon_path: mdiShape,
     };
   }
 
-  private _rowRenderer: ComboBoxLitRenderer<StatisticComboBoxItem> = (
+  private _rowRenderer: RenderItemFunction<StatisticComboBoxItem> = (
     item,
-    { index }
+    index
   ) => {
     const showEntityId = this.hass.userData?.showEntityIdPicker;
     return html`
@@ -446,25 +464,32 @@ export class HaStatisticPicker extends LitElement {
     const placeholder =
       this.placeholder ??
       this.hass.localize("ui.components.statistic-picker.placeholder");
-    const notFoundLabel = this.hass.localize(
-      "ui.components.statistic-picker.no_match"
-    );
 
     return html`
       <ha-generic-picker
         .hass=${this.hass}
         .autofocus=${this.autofocus}
         .allowCustomValue=${this.allowCustomEntity}
+        .disabled=${this.disabled}
         .label=${this.label}
-        .notFoundLabel=${notFoundLabel}
+        use-top-label
         .placeholder=${placeholder}
         .value=${this.value}
+        .notFoundLabel=${this._notFoundLabel}
+        .emptyLabel=${this.hass.localize(
+          "ui.components.statistic-picker.no_statistics"
+        )}
         .rowRenderer=${this._rowRenderer}
         .getItems=${this._getItems}
         .getAdditionalItems=${this._getAdditionalItems}
         .hideClearIcon=${this.hideClearIcon}
         .searchFn=${this._searchFn}
         .valueRenderer=${this._valueRenderer}
+        .helper=${this.helper}
+        .searchKeys=${SEARCH_KEYS}
+        .unknownItemText=${this.hass.localize(
+          "ui.components.statistic-picker.unknown"
+        )}
         @value-changed=${this._valueChanged}
       >
       </ha-generic-picker>
@@ -509,6 +534,11 @@ export class HaStatisticPicker extends LitElement {
     await this.updateComplete;
     await this._picker?.open();
   }
+
+  private _notFoundLabel = (search: string) =>
+    this.hass.localize("ui.components.statistic-picker.no_match", {
+      term: html`<b>‘${search}’</b>`,
+    });
 }
 
 declare global {

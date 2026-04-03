@@ -32,8 +32,10 @@ const cardConfigStruct = assign(
     entity: optional(string()),
     hide_completed: optional(boolean()),
     hide_create: optional(boolean()),
+    hide_section_headers: optional(boolean()),
     display_order: optional(string()),
     item_tap_action: optional(string()),
+    due_date_period: optional(object()),
   })
 );
 
@@ -59,6 +61,7 @@ export class HuiTodoListEditor
         { name: "theme", selector: { theme: {} } },
         { name: "hide_completed", selector: { boolean: {} } },
         { name: "hide_create", selector: { boolean: {} } },
+        { name: "hide_section_headers", selector: { boolean: {} } },
         {
           name: "display_order",
           selector: {
@@ -69,6 +72,24 @@ export class HuiTodoListEditor
                   `ui.panel.lovelace.editor.card.todo-list.sort_modes.${sort === TodoSortMode.NONE && supportsManualSort ? "manual" : sort}`
                 ),
               })),
+            },
+          },
+        },
+        {
+          name: "due_date_period",
+          selector: {
+            period: {
+              options: [
+                "today",
+                "tomorrow",
+                "this_week",
+                "next_week",
+                "this_month",
+                "next_month",
+                "next_7d",
+                "next_30d",
+                "none",
+              ],
             },
           },
         },
@@ -116,7 +137,7 @@ export class HuiTodoListEditor
 
     return html`
         ${
-          !isComponentLoaded(this.hass, "todo")
+          !isComponentLoaded(this.hass.config, "todo")
             ? html`
                 <ha-alert alert-type="error">
                   ${this.hass.localize(
@@ -131,6 +152,7 @@ export class HuiTodoListEditor
           .data=${this._data(this._config)}
           .schema=${this._schema(this.hass.localize, this._todoListSupportsFeature(TodoListEntityFeature.MOVE_TODO_ITEM))}
           .computeLabel=${this._computeLabelCallback}
+          .computeHelper=${this._computeHelperCallback}
           @value-changed=${this._valueChanged}
         ></ha-form>
       </div>
@@ -164,8 +186,10 @@ export class HuiTodoListEditor
         )})`;
       case "hide_completed":
       case "hide_create":
+      case "hide_section_headers":
       case "display_order":
       case "item_tap_action":
+      case "due_date_period":
         return this.hass!.localize(
           `ui.panel.lovelace.editor.card.todo-list.${schema.name}`
         );
@@ -173,6 +197,20 @@ export class HuiTodoListEditor
         return this.hass!.localize(
           `ui.panel.lovelace.editor.card.generic.${schema.name}`
         );
+    }
+  };
+
+  private _computeHelperCallback = (
+    schema: SchemaUnion<ReturnType<typeof this._schema>>
+  ) => {
+    switch (schema.name) {
+      case "hide_section_headers":
+      case "due_date_period":
+        return this.hass!.localize(
+          `ui.panel.lovelace.editor.card.todo-list.${schema.name}_helper`
+        );
+      default:
+        return undefined;
     }
   };
 

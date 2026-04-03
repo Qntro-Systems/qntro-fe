@@ -52,7 +52,9 @@ export class HaAutomationRow extends LitElement {
           <slot name="leading-icon"></slot>
         </div>
         <slot class="header" name="header"></slot>
-        <slot name="icons"></slot>
+        <div class="icons">
+          <slot name="icons"></slot>
+        </div>
       </div>
     `;
   }
@@ -118,12 +120,11 @@ export class HaAutomationRow extends LitElement {
     }
     .row {
       display: flex;
-      padding: 0 8px;
+      padding: 0 var(--ha-space-3);
       min-height: 48px;
-      align-items: center;
+      align-items: flex-start;
       cursor: pointer;
       overflow: hidden;
-      font-weight: var(--ha-font-weight-medium);
       outline: none;
       border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
     }
@@ -134,22 +135,26 @@ export class HaAutomationRow extends LitElement {
     .expand-button {
       transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
       color: var(--ha-color-on-neutral-quiet);
-      margin-left: -8px;
+      margin-left: calc(var(--ha-space-2) * -1);
     }
     :host([building-block]) .leading-icon-wrapper {
       background-color: var(--ha-color-fill-neutral-loud-resting);
       border-radius: var(--ha-border-radius-md);
-      padding: 4px;
+      padding: var(--ha-space-1);
+      margin-top: 10px;
       display: flex;
       justify-content: center;
       align-items: center;
       transform: rotate(45deg);
     }
+    .leading-icon-wrapper {
+      padding-top: var(--ha-space-3);
+    }
     ::slotted([slot="leading-icon"]) {
       color: var(--ha-color-on-neutral-quiet);
     }
     :host([building-block]) ::slotted([slot="leading-icon"]) {
-      --mdc-icon-size: 20px;
+      --mdc-icon-size: var(--ha-space-5);
       color: var(--white-color);
       transform: rotate(-45deg);
     }
@@ -169,8 +174,14 @@ export class HaAutomationRow extends LitElement {
     }
     ::slotted([slot="header"]) {
       flex: 1;
+      min-width: 0;
       overflow-wrap: anywhere;
-      margin: 0 12px;
+      margin: 0 var(--ha-space-3);
+    }
+    .icons {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
     }
     :host([sort-selected]) .row {
       outline: solid;
