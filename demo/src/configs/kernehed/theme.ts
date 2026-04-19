@@ -1,7 +1,7 @@
 // https://community.home-assistant.io/t/slate-a-new-dark-theme/86410
 export const demoThemeKernehed = () => ({
   "text-primary-color": "var(--primary-text-color)",
-  "primary-color": "#2980b9",
+  "primary-color": "#02feff",
   "label-badge-red": "var(--accent-color)",
   "primary-text-color": "#FFFFFF",
   "light-primary-color": "var(--accent-color)",
@@ -17,13 +17,13 @@ export const demoThemeKernehed = () => ({
   "secondary-text-color": "#b58e31",
   "error-color": "#b58e31",
   "divider-color": "rgba(0, 0, 0, .12)",
-  "success-color": "#2980b9",
+  "success-color": "#02feff",
   "switch-unchecked-button-color": "var(--disabled-text-color)",
   "label-badge-border-color": "green",
   "card-background-color": "#292929",
   "label-badge-text-color": "var(--primary-text-color)",
   "switch-unchecked-track-color": "var(--disabled-text-color)",
   "dark-primary-color": "var(--accent-color)",
-  "accent-color": "#2980b9",
+  "accent-color": "#02feff",
   "table-row-alternative-background-color": "#292929",
 });

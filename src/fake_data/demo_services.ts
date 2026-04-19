@@ -463,7 +463,7 @@ export const demoServices: HassServices = {
         },
         media_content_id: {
           description: "The ID of the content to play. Platform dependent.",
-          example: "https://home-assistant.io/images/cast/splash.png",
+          example: "/static/icons/favicon-192x192.png",
         },
         media_content_type: {
           description:

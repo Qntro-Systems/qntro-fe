@@ -1,6 +1,6 @@
 export const demoThemeJimpower = () => ({
   "text-primary-color": "var(--primary-text-color)",
-  "primary-color": "#5294E2",
+  "primary-color": "#02feff",
   "label-badge-red": "var(--accent-color)",
   "light-primary-color": "var(--accent-color)",
   "primary-background-color": "#383C45",
@@ -13,7 +13,7 @@ export const demoThemeJimpower = () => ({
   "table-row-background-color": "#353840",
   "paper-grey-50": "var(--primary-text-color)",
   "switch-checked-color": "var(--accent-color)",
-  "secondary-text-color": "#5294E2",
+  "secondary-text-color": "#02feff",
   "error-color": "#E45E65",
   "divider-color": "rgba(0, 0, 0, .12)",
   "success-color": "#39E949",
