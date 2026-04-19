@@ -492,6 +492,9 @@
     },
     "components": {
       "selectors": {
+        "serial": {
+          "enter_manually": "Enter manually"
+        },
         "media": {
           "pick_media_player": "Select media player",
           "browse_not_supported": "Media player does not support browsing media.",
@@ -1432,7 +1435,16 @@
         "related": "Related",
         "views": "Views",
         "area_settings": "{area} - Settings",
-        "other_routes": "Other routes"
+        "other_routes": "Other routes",
+        "route": {
+          "automations": "[%key:ui::panel::config::automation::caption%]",
+          "scenes": "[%key:ui::panel::config::scene::caption%]",
+          "scripts": "[%key:ui::panel::config::script::caption%]",
+          "developer_tools": "[%key:ui::panel::config::dashboard::developer_tools::main%]",
+          "integrations": "[%key:ui::panel::config::integrations::caption%]",
+          "devices": "[%key:ui::panel::config::devices::caption%]",
+          "entities": "[%key:ui::panel::config::entities::caption%]"
+        }
       }
     },
     "dialogs": {
@@ -1664,7 +1676,17 @@
           "clean_spot": "Clean spot",
           "locate": "Locate",
           "return_home": "Return home",
-          "start_pause": "Start/pause"
+          "start_pause": "Start/pause",
+          "clean_areas": "Clean areas",
+          "cleaning": "Cleaning",
+          "by_area": "By area",
+          "start_cleaning_areas": "Start cleaning",
+          "no_areas_header": "No areas mapped",
+          "no_areas_text": "Map your vacuum's segments to areas in your home to start cleaning by area.",
+          "no_areas_text_non_admin": "Ask an administrator to map your vacuum's segments to areas.",
+          "configure_area_mapping": "Configure area mapping",
+          "configure": "Configure",
+          "clean_areas_order_hint": "Cleaning order may not be supported by your vacuum."
         },
         "person": {
           "create_zone": "Create zone from current location"
@@ -2467,8 +2489,20 @@
           "save_failed": "Failed to save Overview page configuration",
           "areas_hint": "You can rearrange your floors and areas in the order that best represents your house on the {areas_page}.",
           "areas_page": "areas page",
+          "welcome_message": "Welcome message",
+          "welcome_message_helper": "Show the personalized greeting at the top of your overview page.",
           "summaries": "Summaries",
-          "summaries_description": "Choose which summaries to show on your overview page."
+          "summaries_description": "Choose which summaries to show on your overview page.",
+          "custom_shortcuts": "Custom shortcuts",
+          "custom_shortcuts_description": "Add shortcuts to other pages on your overview.",
+          "add_custom_shortcut": "Add shortcut",
+          "edit_shortcut": "Edit shortcut",
+          "shortcut": {
+            "path": "Navigation path",
+            "label": "Label",
+            "icon": "Icon",
+            "color": "Color"
+          }
         },
         "new_overview_dialog": {
           "title": "Welcome to your new overview",
@@ -2730,7 +2764,7 @@
             "title": "App store",
             "check_updates": "Check for updates",
             "repositories": "Repositories",
-            "registries": "Registries",
+            "registries": "Registry credentials",
             "no_results_found": "No results found in {repository}"
           },
           "repositories": {
@@ -3384,6 +3418,7 @@
               "upload_backup": "Upload backup"
             },
             "agent_error": "Error in location {name}",
+            "create_backup_failed": "Failed to create backup",
             "new_backup": "Backup now",
             "onboarding": {
               "title": "Set up backups",
@@ -3686,6 +3721,10 @@
                 "title": "Entity diagnostic",
                 "description": "Select an entity to copy diagnostic details.",
                 "copy_to_clipboard": "[%key:ui::panel::config::automation::editor::copy_to_clipboard%]"
+              },
+              "viewport_environment": {
+                "title": "Device and browser environment",
+                "description": "Snapshot of CSS environment values, media features, and viewport-related values."
               }
             },
             "events": {
@@ -4409,7 +4448,8 @@
               },
               "search_dashboards": "Search dashboards",
               "heading": {
-                "default": "Dashboards"
+                "default": "Dashboards",
+                "custom": "Community dashboards"
               }
             },
             "picker": {
@@ -5369,13 +5409,16 @@
                   "label": "[%key:ui::panel::config::automation::editor::triggers::type::sun::label%]",
                   "before": "Before",
                   "after": "After",
+                  "between": "Between",
                   "before_offset": "Before offset (optional)",
                   "after_offset": "After offset (optional)",
                   "sunrise": "Sunrise",
                   "sunset": "Sunset",
                   "description": {
                     "picker": "Tests if the sun is above or below the horizon.",
-                    "full": "If the sun{afterChoice, select, \n sunrise { after sunrise}\n sunset { after sunset}\n other {}\n}{afterOffsetChoice, select, \n offset { offset by {afterOffset}}\n other {}\n}{beforeChoice, select, \n sunrise { before sunrise}\n sunset { before sunset}\n other {}\n}{beforeOffsetChoice, select, \n offset { offset by {beforeOffset}}\n other {}\n}"
+                    "between": "Between {beforeChoice, select, \n sunrise { sunrise}\n sunset { sunset}\n other {}\n}{beforeOffsetChoice, select, \n offset { {beforeOffset}}\n other {}\n} and {afterChoice, select, \n sunrise { sunrise}\n sunset { sunset}\n other {}\n}{afterOffsetChoice, select, \n offset { {afterOffset}}\n other {}\n}",
+                    "before": "Before {beforeChoice, select, \n sunrise { sunrise}\n sunset { sunset}\n other {}\n}{beforeOffsetChoice, select, \n offset { {beforeOffset}}\n other {}\n}",
+                    "after": "After {afterChoice, select, \n sunrise { sunrise}\n sunset { sunset}\n other {}\n}{afterOffsetChoice, select, \n offset { {afterOffset}}\n other {}\n}"
                   }
                 },
                 "template": {
@@ -8852,7 +8895,9 @@
               "background_enabled_helper": "Display a colored background behind the section",
               "background_color": "Color",
               "background_color_default": "Default",
-              "background_opacity": "Opacity"
+              "background_opacity": "Opacity",
+              "theme": "Theme",
+              "theme_helper": "Apply a specific theme to this section, overriding the view theme"
             },
             "visibility": {
               "explanation": "The section will be shown when ALL conditions below are fulfilled. If no conditions are set, the section will always be shown."
@@ -9245,7 +9290,9 @@
               "chart_type": "Chart type",
               "chart_type_labels": {
                 "line": "Line",
-                "bar": "Bar"
+                "line-stack": "Stacked line",
+                "bar": "Bar",
+                "bar-stack": "Stacked bar"
               },
               "periods": {
                 "auto": "Auto",
@@ -9405,6 +9452,15 @@
                 "visibility_explanation": "The button will be shown when ALL conditions below are fulfilled. If no conditions are set, the button will always be shown."
               },
               "default_heading": "Kitchen"
+            },
+            "shortcut": {
+              "name": "Shortcut",
+              "description": "A card that triggers navigating to a page, opening a URL, or performing an action.",
+              "label": "Label",
+              "card_description": "Description",
+              "text": "Text",
+              "content_layout": "[%key:ui::panel::lovelace::editor::card::tile::content_layout%]",
+              "additional_interactions": "Additional interactions"
             },
             "map": {
               "name": "Map",
@@ -9682,6 +9738,10 @@
                 "state": "State"
               }
             },
+            "shortcut": {
+              "name": "Shortcut",
+              "description": "A badge that triggers navigating to a page, opening a URL, or performing an action."
+            },
             "generic": {
               "manual": "Manual",
               "manual_description": "Need to add a community badge or just want to manually write the YAML?",
@@ -9764,7 +9824,8 @@
                 "label": "Light brightness"
               },
               "light-color-favorites": {
-                "label": "Light color favorites"
+                "label": "Light color favorites",
+                "description": "This feature uses the light's favorite colors. To edit them, open the light's more info dialog and press and hold a favorite."
               },
               "light-color-temp": {
                 "label": "Light color temperature"
@@ -9776,7 +9837,8 @@
                 "label": "Lock open door"
               },
               "media-player-playback": {
-                "label": "Media player playback controls"
+                "label": "Media player playback controls",
+                "controls": "Controls"
               },
               "media-player-sound-mode": {
                 "label": "Media player sound mode"
@@ -9976,6 +10038,10 @@
               "trend-graph": {
                 "label": "Trend graph",
                 "detail": "Show more detail"
+              },
+              "hourly-forecast": {
+                "label": "Hourly forecast",
+                "no_forecast": "No forecast data available"
               }
             }
           },

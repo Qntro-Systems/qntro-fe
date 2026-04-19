@@ -16,6 +16,7 @@ import type {
   LovelaceStrategySectionConfig,
 } from "../../../../data/lovelace/config/section";
 import type { LovelaceViewConfig } from "../../../../data/lovelace/config/view";
+import type { CustomShortcutItem } from "../../../../data/frontend";
 import type { HomeAssistant } from "../../../../types";
 import type {
   AreaCardConfig,
@@ -24,6 +25,7 @@ import type {
   HomeSummaryCard,
   MarkdownCardConfig,
   RepairsCardConfig,
+  ShortcutCardConfig,
   TileCardConfig,
   UpdatesCardConfig,
 } from "../../cards/types";
@@ -40,6 +42,8 @@ export interface HomeOverviewViewStrategyConfig {
   favorite_entities?: string[];
   home_panel?: boolean;
   hidden_summaries?: string[];
+  hide_welcome_message?: boolean;
+  custom_shortcuts?: CustomShortcutItem[];
 }
 
 const computeAreaCard = (
@@ -364,6 +368,17 @@ export class HomeOverviewViewStrategy extends ReactiveElement {
         } satisfies HomeSummaryCard),
     ].filter(Boolean) as LovelaceCardConfig[];
 
+    // Append custom shortcut cards
+    for (const shortcut of config.custom_shortcuts || []) {
+      summaryCards.push({
+        type: "shortcut",
+        label: shortcut.label,
+        icon: shortcut.icon,
+        color: shortcut.color,
+        tap_action: { action: "navigate", navigation_path: shortcut.path },
+      } satisfies ShortcutCardConfig);
+    }
+
     // Build summary cards for sidebar (full width: columns 12)
     const sidebarSummaryCards = summaryCards.map((card) => ({
       ...card,
@@ -474,14 +489,16 @@ export class HomeOverviewViewStrategy extends ReactiveElement {
       type: "sections",
       max_columns: maxColumns,
       sections: sections,
-      header: {
-        layout: "responsive",
-        card: {
-          type: "markdown",
-          text_only: true,
-          content: `## ${hass.localize("ui.panel.lovelace.strategy.home.welcome_user", { user: "{{ user }}" })}`,
-        } satisfies MarkdownCardConfig,
-      },
+      ...(!config.hide_welcome_message && {
+        header: {
+          layout: "responsive",
+          card: {
+            type: "markdown",
+            text_only: true,
+            content: `## ${hass.localize("ui.panel.lovelace.strategy.home.welcome_user", { user: "{{ user }}" })}`,
+          } satisfies MarkdownCardConfig,
+        },
+      }),
       ...(sidebarSection && {
         sidebar: {
           sections: [sidebarSection],
